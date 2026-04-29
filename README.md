@@ -10,7 +10,7 @@ The goal was to turn static airport diagrams into dynamic systems that allow rea
 
 ## 💡 Motivation
 
-While listening to ground and tower frequencies, I found it difficult to track aircraft positions using static airport diagrams. I had to constantly switch between airport diagrams and tools like Flightradar24 to understand where aircraft were located.
+While listening to ground and tower frequencies, I found it difficult to track aircraft positions and had to constantly switch between airport diagram pdf and Flightradar24 to understand where aircraft were located.
 
 This project was built to solve that problem by bringing everything into a single system.
 
@@ -22,10 +22,6 @@ This project was built to solve that problem by bringing everything into a singl
 - 🔄 Works without external coordinate datasets (fully self-contained)  
 - 🛰️ Live ADS-B aircraft tracking  
 - 🗺️ Real-time overlay of aircraft positions on airport diagrams  
-- 📊 Airport operations analytics:
-  - runway usage  
-  - aircraft type distribution  
-  - peak traffic periods  
 
 ---
 
@@ -101,6 +97,9 @@ python airport_live_georef.py
 
 - Better label rendering / clustering
 - Web-based visualization (instead of PyQt)
+- 📊 Airport operations analytics:
+  - runway usage  
+  - aircraft type distribution  
+  - peak traffic periods  
 - Integration with historical ADS-B datasets for deeper analytics
-
 
