@@ -18,10 +18,17 @@ This project was built to solve that problem by bringing everything into a singl
 
 ## 🧠 Key Features
 
+<<<<<<< Updated upstream
 - 📍 Automatic georeferencing of FAA airport diagrams  
 - 🔄 Works without external coordinate datasets (fully self-contained)  
 - 🛰️ Live ADS-B aircraft tracking  
 - 🗺️ Real-time overlay of aircraft positions on airport diagrams  
+=======
+- Automatic georeferencing of FAA airport diagrams  
+- Works without external coordinate datasets (fully self-contained)  
+- Live ADS-B aircraft tracking  
+- Real-time overlay of aircraft positions on airport diagrams
+>>>>>>> Stashed changes
 
 ---
 
