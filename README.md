@@ -1,6 +1,6 @@
-# ✈️ Airport Surface Visualization & Traffic Analytics System
+# Airport Traffic Visualization
 
-## 🚀 Overview
+## Overview
 
 This project is a geospatial data pipeline and real-time visualization system that converts FAA airport diagrams into geo-referenced maps and overlays live aircraft traffic using ADS-B data.
 
@@ -8,7 +8,7 @@ The goal was to turn static airport diagrams into dynamic systems that allow rea
 
 ---
 
-## 💡 Motivation
+## Motivation
 
 While listening to ground and tower frequencies, I found it difficult to track aircraft positions and had to constantly switch between airport diagram pdf and Flightradar24 to understand where aircraft were located.
 
@@ -16,16 +16,16 @@ This project was built to solve that problem by bringing everything into a singl
 
 ---
 
-## 🧠 Key Features
+## Key Features
 
-- 📍 Automatic georeferencing of FAA airport diagrams  
-- 🔄 Works without external coordinate datasets (fully self-contained)  
-- 🛰️ Live ADS-B aircraft tracking  
-- 🗺️ Real-time overlay of aircraft positions on airport diagrams  
+- Automatic georeferencing of FAA airport diagrams  
+- Works without external coordinate datasets (fully self-contained)  
+- Live ADS-B aircraft tracking  
+- Real-time overlay of aircraft positions on airport diagrams  
 
 ---
 
-## ⚙️ How It Works
+## How It Works
 
 ### 1. Diagram Processing
 - Loads FAA airport diagram PDFs
@@ -51,7 +51,7 @@ This project was built to solve that problem by bringing everything into a singl
 
 ---
 
-## 🏗️ Tech Stack
+## Tech Stack
 
 - Python
 - PyMuPDF – PDF parsing & vector extraction  
@@ -63,7 +63,7 @@ This project was built to solve that problem by bringing everything into a singl
 
 ---
 
-## 📊 Results
+## Results
 
 - Achieved ~1 meter average spatial alignment accuracy  
 - Successfully visualized real-time aircraft movement on airport surfaces  
@@ -71,7 +71,7 @@ This project was built to solve that problem by bringing everything into a singl
 
 ---
 
-## ▶️ How to Run
+## How to Run
 
 ### 1. Install dependencies
 
@@ -93,7 +93,7 @@ python airport_live_georef.py
 
 ---
 
-## 📌 Future Improvements
+## Future Improvements
 
 - Better label rendering / clustering
 - Web-based visualization (instead of PyQt)
