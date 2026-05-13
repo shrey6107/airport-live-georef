@@ -97,7 +97,7 @@ python airport_live_georef.py
 
 - Better label rendering / clustering
 - Web-based visualization (instead of PyQt)
-- 📊 Airport operations analytics:
+- Airport operations analytics:
   - runway usage  
   - aircraft type distribution  
   - peak traffic periods  
