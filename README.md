@@ -1,5 +1,31 @@
 # Airport Traffic Visualization
 
+## Updates
+
+### 05-24-26
+
+1. Added runway detection to identify runways and compute true runway headings from FAA airport diagrams
+
+2. Refactored the original `airport_live_georef.py` into separate standalone georeferencing and visualization scripts
+
+3. Added instantaneous landing/takeoff detection script using single-poll ADS-B telemetry within a 2 NM airport radius
+
+4. Improved Qt visualization performance using reusable labels/brushes, thread overlap protection, and a dynamic display field system for adding new visualization parameters without renderer modifications
+
+### 04-27-26
+
+1. Added initial `airport_live_georef.py` prototype combining georeferencing and live visualization logic
+
+---
+
+## Known Issues
+
+1. The free ADS-B API currently used is unreliable and occasionally returns incomplete or inconsistent telemetry data
+
+2. Some FAA airport diagram PDFs contain broken or incomplete text layers, while others encode latitude/longitude labels as vector graphics instead of text, preventing automatic georeferencing
+
+---
+
 ## Overview
 
 This project is a geospatial data pipeline and real-time visualization system that converts FAA airport diagrams into geo-referenced maps and overlays live aircraft traffic using ADS-B data.
@@ -10,9 +36,9 @@ The goal was to turn static airport diagrams into dynamic systems that allow rea
 
 ## Motivation
 
-While listening to ground and tower frequencies, I found it difficult to track aircraft positions and had to constantly switch between airport diagram pdf and Flightradar24 to understand where aircraft were located.
+I like listening to ground and tower frequencies but it was difficult to keep track of aircraft positions and follow the instructions they were given. I had to keep switching between airport diagram pdf and Flightradar24. 
 
-This project was built to solve that problem by bringing everything into a single system.
+I built the project to solve this problem by combining both of them into a single system.
 
 ---
 
@@ -89,7 +115,7 @@ python airport_live_georef.py
 
 - Airport diagram (GeoTIFF)
 - Live aircraft positions updating in real time
-- Aircraft labels (callsign, altitude, track)
+- Aircraft labels (callsign, altitude, track, vertical speed)
 
 ---
 
@@ -97,7 +123,7 @@ python airport_live_georef.py
 
 - Better label rendering / clustering
 - Web-based visualization (instead of PyQt)
-- 📊 Airport operations analytics:
+- Airport operations analytics:
   - runway usage  
   - aircraft type distribution  
   - peak traffic periods  
