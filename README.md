@@ -2,6 +2,10 @@
 
 ## Updates
 
+### 05-29-26
+
+1. Added continuous landing/takeoff detection script. Classification filters generates vote over time which are stored in rolling deque. Aircrafts are classified once the confidence exceeds customizable threshold (currently at 70%). Next, working on storing classified aircraft and telemetry data in SQLite for analysis.
+
 ### 05-24-26
 
 1. Added runway detection to identify runways and compute true runway headings from FAA airport diagrams
