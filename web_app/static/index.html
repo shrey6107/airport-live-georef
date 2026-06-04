@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Airport Traffic Dashboard</title>
+
+    <!-- Makes the app render correctly on phones instead of acting like a desktop page. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <!-- Leaflet map styling. -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        /* 100dvh works better on mobile because browser toolbars can change visible height. */
+        #map {
+            height: 100dvh;
+            width: 100vw;
+        }
+
+        /* Control panel for airport input and diagram opacity. */
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 70px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            max-width: calc(100vw - 90px);
+        }
+
+        /* 16px prevents iPhone Safari from auto-zooming into the input. */
+        input,
+        button,
+        label {
+            font-size: 16px;
+        }
+
+        #icao-input {
+            width: 90px;
+            text-transform: uppercase;
+        }
+
+        #opacity-slider {
+            width: 140px;
+        }
+
+        /* Smaller layout for mobile screens. */
+        @media (max-width: 600px) {
+            #controls {
+                top: 10px;
+                left: 55px;
+                right: 10px;
+                max-width: none;
+                padding: 8px;
+            }
+
+            #icao-input {
+                width: 80px;
+            }
+
+            #opacity-slider {
+                width: 100%;
+            }
+
+            #load-airport-btn {
+                margin-left: 8px;
+            }
+        }
+
+        /* Compact callsign label. */
+        .aircraft-tooltip {
+            font-size: 11px;
+            font-weight: bold;
+            background: white;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 2px 4px;
+            cursor: pointer;
+        }
+
+        /* Expanded aircraft details label. */
+        .aircraft-tooltip-expanded {
+            font-size: 12px;
+            font-weight: bold;
+            background: white;
+            border: 2px solid red;
+            border-radius: 5px;
+            padding: 4px 6px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="controls">
+        <input type="text" id="icao-input" placeholder="ICAO" value="KSFO">
+        <button id="load-airport-btn">Load Airport</button>
+
+        <br><br>
+
+        <label for="opacity-slider">Diagram Opacity:</label>
+        <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="0.7">
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Leaflet map library and rotated image overlay plugin. -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/leaflet-imageoverlay-rotated@0.2.1/Leaflet.ImageOverlay.Rotated.js"></script>
+
+    <script>
+        const DEFAULT_AIRPORT_CENTER = [37.6213, -122.3790]; // KSFO fallback/start location.
+        const DEFAULT_ZOOM = 13;
+        const AIRCRAFT_REFRESH_MS = 1200;
+        const ADSB_RADIUS_NM = 2;
+
+        const AIRCRAFT_COLORS = {
+            climbing: "blue",
+            descending: "green",
+            unknown: "red"
+        };
+
+        /*
+            Frontend state belongs to this browser tab only.
+
+            This avoids the earlier global-backend-state issue where localhost
+            and ngrok could overwrite each other's selected airport.
+        */
+        const state = {
+            airportOverlay: null,
+            aircraftMarkers: [],
+            expandedAircraft: new Set(),
+            currentAirport: null
+        };
+
+        const elements = {
+            icaoInput: document.getElementById("icao-input"),
+            loadAirportButton: document.getElementById("load-airport-btn"),
+            opacitySlider: document.getElementById("opacity-slider")
+        };
+
+        const map = L.map("map").setView(DEFAULT_AIRPORT_CENTER, DEFAULT_ZOOM);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19
+        }).addTo(map);
+
+        elements.loadAirportButton.addEventListener("click", loadAirport);
+
+        elements.icaoInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                loadAirport();
+            }
+        });
+
+        elements.opacitySlider.addEventListener("input", () => {
+            if (state.airportOverlay) {
+                state.airportOverlay.setOpacity(getSelectedOpacity());
+            }
+        });
+
+        function getSelectedIcao() {
+            return elements.icaoInput.value.trim().toUpperCase();
+        }
+
+        function getSelectedOpacity() {
+            return Number(elements.opacitySlider.value);
+        }
+
+        function getAircraftId(aircraft) {
+            return aircraft.hex || aircraft.callsign || `${aircraft.lat}_${aircraft.lon}`;
+        }
+
+        function getAircraftColor(aircraft) {
+            if (aircraft.status === "Taking off") {
+                return AIRCRAFT_COLORS.climbing;
+            }
+
+            if (aircraft.status === "Landing") {
+                return AIRCRAFT_COLORS.descending;
+            }
+
+            return AIRCRAFT_COLORS.unknown;
+        }
+
+        function createShortLabel(aircraft) {
+            return aircraft.callsign || "Unknown";
+        }
+
+        function createFullLabel(aircraft) {
+            return `
+                <b>${aircraft.callsign || "Unknown"}</b><br>
+                Type: ${aircraft.aircraft_type || "N/A"}<br>
+                Altitude: ${aircraft.altitude ?? "N/A"}<br>
+                Ground Speed: ${aircraft.ground_speed ?? "N/A"}<br>
+                V/S: ${aircraft.vertical_rate ?? "N/A"}<br>
+                Track: ${aircraft.track ?? "N/A"}<br>
+                Status: ${aircraft.status || "N/A"}
+            `;
+        }
+
+        /*
+            Load airport metadata from FastAPI.
+
+            Backend returns:
+            - center_lat / center_lon for ADS-B queries
+            - diagram_url for the PNG airport diagram
+            - corners_url for rotated Leaflet placement
+        */
+        async function loadAirport() {
+            const icao = getSelectedIcao();
+
+            if (!icao) {
+                alert("Please enter an airport ICAO code.");
+                return;
+            }
+
+            try {
+                const response = await fetch("/airport/load", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ icao })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to load airport: ${response.status}`);
+                }
+
+                const airport = await response.json();
+
+                state.currentAirport = airport;
+                state.expandedAircraft.clear();
+
+                map.setView([airport.center_lat, airport.center_lon], DEFAULT_ZOOM);
+
+                await loadAirportDiagram(airport.diagram_url, airport.corners_url);
+                await loadAircraft();
+
+            } catch (error) {
+                console.error("Airport load error:", error);
+                alert("Unable to load airport. Check the ICAO code and backend logs.");
+            }
+        }
+
+        /*
+            Add the georeferenced airport diagram to Leaflet.
+
+            The browser cannot directly use the GeoTIFF affine transform, so the backend
+            converts the GeoTIFF into:
+            - diagram.png
+            - corners.json with topLeft, topRight, bottomLeft coordinates
+        */
+        async function loadAirportDiagram(diagramUrl, cornersUrl) {
+            if (state.airportOverlay) {
+                map.removeLayer(state.airportOverlay);
+                state.airportOverlay = null;
+            }
+
+            const response = await fetch(cornersUrl);
+
+            if (!response.ok) {
+                throw new Error(`Failed to load airport corners: ${response.status}`);
+            }
+
+            const corners = await response.json();
+
+            const topLeft = L.latLng(corners.topLeft[0], corners.topLeft[1]);
+            const topRight = L.latLng(corners.topRight[0], corners.topRight[1]);
+            const bottomLeft = L.latLng(corners.bottomLeft[0], corners.bottomLeft[1]);
+
+            state.airportOverlay = L.imageOverlay.rotated(
+                diagramUrl,
+                topLeft,
+                topRight,
+                bottomLeft,
+                {
+                    opacity: getSelectedOpacity(),
+                    interactive: false
+                }
+            ).addTo(map);
+
+            map.fitBounds([topLeft, topRight, bottomLeft]);
+        }
+
+        /*
+            Fetch live ADS-B aircraft around the selected airport center.
+            The selected airport is stored in browser state, so different devices/tabs
+            can view different airports at the same time.
+        */
+        async function loadAircraft() {
+            if (!state.currentAirport) {
+                return;
+            }
+
+            try {
+                const { center_lat, center_lon } = state.currentAirport;
+
+                const response = await fetch(
+                    `/aircraft?lat=${center_lat}&lon=${center_lon}&dist=${ADSB_RADIUS_NM}`
+                );
+
+                if (!response.ok) {
+                    throw new Error(`Failed to load aircraft: ${response.status}`);
+                }
+
+                const aircraft = await response.json();
+
+                clearAircraftMarkers();
+                aircraft.forEach(addAircraftMarker);
+
+            } catch (error) {
+                console.error("Aircraft load error:", error);
+            }
+        }
+
+        function clearAircraftMarkers() {
+            state.aircraftMarkers.forEach(marker => map.removeLayer(marker));
+            state.aircraftMarkers = [];
+        }
+
+        function addAircraftMarker(aircraft) {
+            if (!aircraft.lat || !aircraft.lon) {
+                return;
+            }
+
+            const aircraftId = getAircraftId(aircraft);
+            const isExpanded = state.expandedAircraft.has(aircraftId);
+
+            const markerColor = getAircraftColor(aircraft);
+
+            const marker = L.circleMarker(
+                [aircraft.lat, aircraft.lon],
+                {
+                    radius: 4,
+                    color: markerColor,
+                    fillColor: markerColor,
+                    fillOpacity: 1
+                }
+            ).addTo(map);
+
+            marker.bindTooltip(
+                isExpanded ? createFullLabel(aircraft) : createShortLabel(aircraft),
+                {
+                    permanent: true,
+                    direction: "auto",
+                    interactive: true,
+                    className: isExpanded ? "aircraft-tooltip-expanded" : "aircraft-tooltip"
+                }
+            );
+
+            marker.on("click", () => toggleAircraftLabel(aircraftId));
+
+            /*
+                Leaflet tooltips are separate DOM elements, so clicking the label
+                needs its own handler. This makes both the red dot and callsign label
+                toggle the expanded view.
+            */
+            marker.on("tooltipopen", (event) => {
+                const tooltipElement = event.tooltip.getElement();
+
+                if (!tooltipElement) {
+                    return;
+                }
+
+                tooltipElement.onclick = (clickEvent) => {
+                    clickEvent.stopPropagation();
+                    toggleAircraftLabel(aircraftId);
+                };
+            });
+
+            state.aircraftMarkers.push(marker);
+        }
+
+        function toggleAircraftLabel(aircraftId) {
+            if (state.expandedAircraft.has(aircraftId)) {
+                state.expandedAircraft.delete(aircraftId);
+            } else {
+                state.expandedAircraft.add(aircraftId);
+            }
+
+            loadAircraft();
+        }
+
+        loadAirport();
+        setInterval(loadAircraft, AIRCRAFT_REFRESH_MS);
+    </script>
+
+</body>
+
+</html>
