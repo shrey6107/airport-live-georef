@@ -2,6 +2,13 @@
 
 ## Updates
 
+### 06-10-26
+1. Added final landing/takeoff/go-around detection script with SQLite database to store classified events with metadata (event time, callsign, aircraft type, airport name) to gain operational insights.
+
+### 06-04-26
+1. Added web app support using FastAPI, uvicorn and Leaflet
+
+
 ### 05-29-26
 
 1. Added continuous landing/takeoff detection script. Classification filters generates vote over time which are stored in rolling deque. Aircrafts are classified once the confidence exceeds customizable threshold (currently at 70%). Next, working on storing classified aircraft and telemetry data in SQLite for analysis.
