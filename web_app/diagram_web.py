@@ -25,7 +25,11 @@ from PIL import Image
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT_DIR))
 
-from georeferencing import ensure_geotiff_exists, get_geotiff_center_lon_lat
+from georeferencing import (
+    GeoreferencingError,
+    ensure_geotiff_exists,
+    get_geotiff_center_lon_lat,
+)
 
 
 # All generated web assets are stored under static/ so FastAPI can serve them.

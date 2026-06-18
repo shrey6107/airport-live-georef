@@ -11,6 +11,11 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
     <style>
+        html,
+        body {
+            height: 100%;
+        }
+
         body {
             margin: 0;
             padding: 0;
@@ -24,24 +29,82 @@
             width: 100vw;
         }
 
-        /* Control panel for airport input and diagram opacity. */
+        /* Compact floating dashboard panel, placed away from Leaflet zoom controls. */
         #controls {
-            position: absolute;
-            top: 10px;
-            left: 70px;
-            z-index: 1000;
             background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: calc(100dvh - 24px);
+            overflow-y: auto;
             padding: 10px;
-            border-radius: 6px;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
-            max-width: calc(100vw - 90px);
+            position: absolute;
+            right: 12px;
+            top: 12px;
+            width: min(360px, calc(100vw - 84px));
+            z-index: 1000;
+        }
+
+        /*
+            The dashboard header stays visible even when advanced controls are collapsed.
+            It contains the ICAO input, load button, expand/collapse button, and status message.
+        */
+        .dashboard-header {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .airport-load-row {
+            align-items: center;
+            display: flex;
+            gap: 6px;
+        }
+
+        #toggle-controls-btn {
+            align-items: center;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            background: #f9fafb;
+            cursor: pointer;
+            display: inline-flex;
+            height: 32px;
+            justify-content: center;
+            line-height: 1;
+            padding: 0 8px;
+        }
+
+        #toggle-controls-btn:hover {
+            background: #f3f4f6;
+        }
+
+        #advanced-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        #advanced-controls.is-collapsed {
+            display: none;
         }
 
         /* 16px prevents iPhone Safari from auto-zooming into the input. */
         input,
         button,
-        label {
+        select {
             font-size: 16px;
+        }
+
+        label {
+            font-size: 14px;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.65;
         }
 
         #icao-input {
@@ -50,17 +113,88 @@
         }
 
         #opacity-slider {
-            width: 140px;
+            width: 120px;
         }
 
-        /* Smaller layout for mobile screens. */
+        .control-row {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .control-row.is-split {
+            justify-content: space-between;
+        }
+
+        .control-section {
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            padding-bottom: 8px;
+        }
+
+        .control-section:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .control-row label {
+            align-items: center;
+            display: flex;
+            gap: 6px;
+        }
+
+        .control-row select {
+            max-width: 170px;
+        }
+
+        .status-panel {
+            border-left: 4px solid #6b7280;
+            background: #f3f4f6;
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-size: 14px;
+            line-height: 1.35;
+        }
+
+        .status-panel.status-success {
+            border-color: #15803d;
+            background: #f0fdf4;
+        }
+
+        .status-panel.status-error {
+            border-color: #b91c1c;
+            background: #fef2f2;
+        }
+
+        .status-grid {
+            display: grid;
+            gap: 3px 8px;
+            grid-template-columns: auto 1fr;
+            margin: 0;
+            font-size: 13px;
+        }
+
+        .status-grid dt {
+            color: #4b5563;
+            margin: 0;
+        }
+
+        .status-grid dd {
+            font-weight: bold;
+            margin: 0;
+        }
+
+        /* Smaller floating panel for mobile screens. */
         @media (max-width: 600px) {
             #controls {
-                top: 10px;
-                left: 55px;
-                right: 10px;
-                max-width: none;
-                padding: 8px;
+                left: 56px;
+                max-height: 52dvh;
+                right: 8px;
+                top: 8px;
+                width: auto;
             }
 
             #icao-input {
@@ -72,7 +206,11 @@
             }
 
             #load-airport-btn {
-                margin-left: 8px;
+                margin-left: 4px;
+            }
+
+            .airport-load-row {
+                flex-wrap: wrap;
             }
         }
 
@@ -103,13 +241,76 @@
 <body>
 
     <div id="controls">
-        <input type="text" id="icao-input" placeholder="ICAO" value="KSFO">
-        <button id="load-airport-btn">Load Airport</button>
+        <div class="dashboard-header">
+            <div class="airport-load-row">
+                <input type="text" id="icao-input" placeholder="ICAO" value="KSFO">
+                <button id="load-airport-btn">Load Airport</button>
 
-        <br><br>
+                <button id="toggle-controls-btn" type="button" aria-expanded="false" aria-controls="advanced-controls"
+                    title="Show controls">
+                    ▼
+                </button>
+            </div>
 
-        <label for="opacity-slider">Diagram Opacity:</label>
-        <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="0.7">
+            <!-- Status stays visible when the advanced controls are collapsed. -->
+            <div id="status-panel" class="status-panel" role="status" aria-live="polite">Ready.</div>
+        </div>
+
+        <div id="advanced-controls" class="is-collapsed">
+            <div class="control-section">
+                <div class="control-row is-split">
+                    <label for="opacity-slider">Opacity</label>
+                    <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="0.7">
+                </div>
+
+                <div class="control-row is-split">
+                    <label>
+                        <input type="checkbox" id="diagram-toggle" checked>
+                        Diagram
+                    </label>
+
+                    <label>
+                        <input type="checkbox" id="traffic-toggle" checked>
+                        Live traffic
+                    </label>
+                </div>
+
+                <div class="control-row is-split">
+                    <label for="aircraft-filter">Aircraft</label>
+                    <select id="aircraft-filter">
+                        <option value="all" selected>All aircraft</option>
+                        <option value="airborne">Airborne only</option>
+                    </select>
+                </div>
+
+                <div class="control-row is-split">
+                    <label for="refresh-interval">Refresh</label>
+                    <select id="refresh-interval">
+                        <option value="1000">1 sec</option>
+                        <option value="2000" selected>2 sec</option>
+                        <option value="5000">5 sec</option>
+                        <option value="10000">10 sec</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <dl class="status-grid">
+                    <dt>Airport</dt>
+                    <dd id="airport-status">KSFO</dd>
+                    <dt>Aircraft</dt>
+                    <dd id="aircraft-count-status">0</dd>
+                    <dt>Last refresh</dt>
+                    <dd id="last-refresh-status">Never</dd>
+                    <dt>Traffic</dt>
+                    <dd id="traffic-status">ON</dd>
+                    <dt>Filter</dt>
+                    <dd id="filter-status">All aircraft</dd>
+                </dl>
+
+                <button id="clear-labels-btn">Clear labels</button>
+            </div>
+        </div>
     </div>
 
     <div id="map"></div>
@@ -122,8 +323,9 @@
     <script>
         const DEFAULT_AIRPORT_CENTER = [37.6213, -122.3790]; // KSFO fallback/start location.
         const DEFAULT_ZOOM = 13;
-        const AIRCRAFT_REFRESH_MS = 1200;
+        const AIRCRAFT_REFRESH_MS = 2000;
         const ADSB_RADIUS_NM = 2;
+        const CURRENT_AIRPORT_CLICK_SUPPRESSION_NM = 5;
 
         const AIRCRAFT_COLORS = {
             climbing: "blue",
@@ -140,14 +342,34 @@
         const state = {
             airportOverlay: null,
             aircraftMarkers: [],
+            aircraft: [],
             expandedAircraft: new Set(),
-            currentAirport: null
+            currentAirport: null,
+            aircraftRefreshTimer: null,
+            lastAircraftRefresh: null,
+            liveTrafficEnabled: true,
+            aircraftFilter: "all",
+            isDiagramVisible: true,
+            isAirportLoading: false
         };
 
         const elements = {
             icaoInput: document.getElementById("icao-input"),
             loadAirportButton: document.getElementById("load-airport-btn"),
-            opacitySlider: document.getElementById("opacity-slider")
+            opacitySlider: document.getElementById("opacity-slider"),
+            statusPanel: document.getElementById("status-panel"),
+            airportStatus: document.getElementById("airport-status"),
+            aircraftCountStatus: document.getElementById("aircraft-count-status"),
+            lastRefreshStatus: document.getElementById("last-refresh-status"),
+            trafficStatus: document.getElementById("traffic-status"),
+            filterStatus: document.getElementById("filter-status"),
+            trafficToggle: document.getElementById("traffic-toggle"),
+            aircraftFilter: document.getElementById("aircraft-filter"),
+            refreshInterval: document.getElementById("refresh-interval"),
+            clearLabelsButton: document.getElementById("clear-labels-btn"),
+            diagramToggle: document.getElementById("diagram-toggle"),
+            advancedControls: document.getElementById("advanced-controls"),
+            toggleControlsButton: document.getElementById("toggle-controls-btn")
         };
 
         const map = L.map("map").setView(DEFAULT_AIRPORT_CENTER, DEFAULT_ZOOM);
@@ -156,7 +378,11 @@
             maxZoom: 19
         }).addTo(map);
 
+        map.on("click", findAirportFromMapClick);
+
         elements.loadAirportButton.addEventListener("click", loadAirport);
+
+        elements.toggleControlsButton.addEventListener("click", toggleAdvancedControls);
 
         elements.icaoInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
@@ -170,6 +396,52 @@
             }
         });
 
+        elements.trafficToggle.addEventListener("change", () => {
+            state.liveTrafficEnabled = elements.trafficToggle.checked;
+
+            if (state.liveTrafficEnabled) {
+                showStatusMessage("Live aircraft traffic is ON.");
+                restartAircraftPolling(true);
+            } else {
+                showStatusMessage("Live aircraft traffic is OFF.");
+                stopAircraftPolling();
+                state.aircraft = [];
+                renderAircraft();
+            }
+
+            updateStatusIndicators();
+        });
+
+        elements.aircraftFilter.addEventListener("change", () => {
+            state.aircraftFilter = elements.aircraftFilter.value;
+            renderAircraft();
+            updateStatusIndicators();
+        });
+
+        elements.refreshInterval.addEventListener("change", () => {
+            restartAircraftPolling(false);
+            updateStatusIndicators();
+        });
+
+        elements.clearLabelsButton.addEventListener("click", () => {
+            state.expandedAircraft.clear();
+            renderAircraft();
+        });
+
+        elements.diagramToggle.addEventListener("change", () => {
+            state.isDiagramVisible = elements.diagramToggle.checked;
+            updateAirportOverlayVisibility();
+        });
+
+        function toggleAdvancedControls() {
+            const isCollapsed = elements.advancedControls.classList.toggle("is-collapsed");
+            const isExpanded = !isCollapsed;
+
+            elements.toggleControlsButton.textContent = isExpanded ? "▲" : "▼";
+            elements.toggleControlsButton.title = isExpanded ? "Hide controls" : "Show controls";
+            elements.toggleControlsButton.setAttribute("aria-expanded", String(isExpanded));
+        }
+
         function getSelectedIcao() {
             return elements.icaoInput.value.trim().toUpperCase();
         }
@@ -178,8 +450,223 @@
             return Number(elements.opacitySlider.value);
         }
 
+        function getSelectedRefreshMs() {
+            return Number(elements.refreshInterval.value) || AIRCRAFT_REFRESH_MS;
+        }
+
+        function getFilterLabel() {
+            return state.aircraftFilter === "airborne" ? "Airborne only" : "All aircraft";
+        }
+
+        function formatRefreshTime(date) {
+            return date ? date.toLocaleTimeString() : "Never";
+        }
+
+        function showStatusMessage(message, type = "info") {
+            elements.statusPanel.textContent = message;
+            elements.statusPanel.className = `status-panel status-${type}`;
+        }
+
+        function setAirportLoading(isLoading) {
+            state.isAirportLoading = isLoading;
+            elements.loadAirportButton.disabled = isLoading;
+            elements.loadAirportButton.textContent = isLoading ? "Loading..." : "Load Airport";
+        }
+
+        function updateStatusIndicators() {
+            const visibleAircraft = getVisibleAircraft();
+            const totalAircraft = state.liveTrafficEnabled ? state.aircraft.length : 0;
+            const countText = visibleAircraft.length === totalAircraft
+                ? String(visibleAircraft.length)
+                : `${visibleAircraft.length} of ${totalAircraft}`;
+
+            elements.airportStatus.textContent = state.currentAirport?.icao || getSelectedIcao() || "None";
+            elements.aircraftCountStatus.textContent = countText;
+            elements.lastRefreshStatus.textContent = formatRefreshTime(state.lastAircraftRefresh);
+            elements.trafficStatus.textContent = state.liveTrafficEnabled ? "ON" : "OFF";
+            elements.filterStatus.textContent = getFilterLabel();
+        }
+
+        async function readErrorDetail(response) {
+            try {
+                const errorBody = await response.json();
+                const detail = errorBody.detail;
+
+                if (typeof detail === "string") {
+                    return detail;
+                }
+
+                if (detail) {
+                    return JSON.stringify(detail);
+                }
+
+                return response.statusText || `HTTP ${response.status}`;
+            } catch (error) {
+                return response.statusText || `HTTP ${response.status}`;
+            }
+        }
+
+        function loadAirportCode(icao) {
+            elements.icaoInput.value = icao;
+            loadAirport();
+        }
+
+        function isCurrentAirport(nearestAirport) {
+            const currentIcao = state.currentAirport?.icao;
+
+            if (!currentIcao || !nearestAirport?.icao) {
+                return false;
+            }
+
+            return currentIcao.toUpperCase() === nearestAirport.icao.toUpperCase();
+        }
+
+        function isClickNearCurrentAirport(latlng) {
+            if (!state.currentAirport) {
+                return false;
+            }
+
+            const currentCenter = L.latLng(
+                state.currentAirport.center_lat,
+                state.currentAirport.center_lon
+            );
+            const distanceNm = map.distance(latlng, currentCenter) / 1852;
+
+            return distanceNm <= CURRENT_AIRPORT_CLICK_SUPPRESSION_NM;
+        }
+
+        function shouldIgnoreMapClick(event) {
+            const target = event.originalEvent?.target;
+
+            /*
+                Aircraft markers and tooltips have their own click behavior.
+                Keep those clicks from also becoming map airport lookups.
+            */
+            if (target?.closest(
+                "#controls, .leaflet-control, .leaflet-popup, " +
+                ".aircraft-tooltip, .aircraft-tooltip-expanded, .leaflet-interactive"
+            )) {
+                return true;
+            }
+
+            /*
+                Clicking around the already-loaded airport is usually map/traffic
+                interaction, not a request to load the same airport again.
+            */
+            if (isClickNearCurrentAirport(event.latlng)) {
+                showStatusMessage(`${state.currentAirport.icao} is already loaded.`);
+                return true;
+            }
+
+            return false;
+        }
+
+        function showMapMessage(latlng, message) {
+            L.popup()
+                .setLatLng(latlng)
+                .setContent(message)
+                .openOn(map);
+        }
+
+        function showNearestAirportPopup(latlng, airport) {
+            const container = document.createElement("div");
+
+            const title = document.createElement("div");
+            title.textContent = "Nearest airport:";
+            container.appendChild(title);
+
+            const code = document.createElement("strong");
+            code.textContent = airport.icao;
+            container.appendChild(code);
+
+            const name = document.createElement("div");
+            name.textContent = airport.name;
+            container.appendChild(name);
+
+            const distance = document.createElement("div");
+            distance.textContent = `Distance: ${airport.distance_nm} NM`;
+            container.appendChild(distance);
+
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = "Load Airport";
+            button.addEventListener("click", () => {
+                map.closePopup();
+                loadAirportCode(airport.icao);
+            });
+            container.appendChild(button);
+
+            L.popup()
+                .setLatLng(latlng)
+                .setContent(container)
+                .openOn(map);
+        }
+
+        /*
+            A map click only looks up the nearest airport code. Loading still
+            goes through the same input-driven /airport/load pipeline.
+        */
+        async function findAirportFromMapClick(event) {
+            if (shouldIgnoreMapClick(event)) {
+                return;
+            }
+
+            const { lat, lng } = event.latlng;
+
+            showStatusMessage("Looking for nearest airport...");
+
+            try {
+                const response = await fetch(
+                    `/airport/nearest?lat=${lat}&lon=${lng}`
+                );
+
+                if (!response.ok) {
+                    const detail = await readErrorDetail(response);
+
+                    if (response.status === 404) {
+                        const message = "No supported airport found near this location.";
+                        showStatusMessage(message, "error");
+                        showMapMessage(event.latlng, message);
+                        return;
+                    }
+
+                    throw new Error(detail || "Unable to find nearest airport.");
+                }
+
+                const airport = await response.json();
+
+                if (isCurrentAirport(airport)) {
+                    showStatusMessage(`${state.currentAirport.icao} is already loaded.`);
+                    return;
+                }
+
+                showStatusMessage(`Nearest airport: ${airport.icao} (${airport.distance_nm} NM).`);
+                showNearestAirportPopup(event.latlng, airport);
+
+            } catch (error) {
+                console.error("Airport lookup error:", error);
+                showStatusMessage(`Unable to find nearest airport: ${error.message}`, "error");
+            }
+        }
+
         function getAircraftId(aircraft) {
             return aircraft.hex || aircraft.callsign || `${aircraft.lat}_${aircraft.lon}`;
+        }
+
+        function isGroundAircraft(aircraft) {
+            return String(aircraft.altitude ?? "").toLowerCase() === "ground";
+        }
+
+        function getVisibleAircraft() {
+            if (!state.liveTrafficEnabled) {
+                return [];
+            }
+
+            if (state.aircraftFilter !== "airborne") {
+                return state.aircraft;
+            }
+
+            return state.aircraft.filter(aircraft => !isGroundAircraft(aircraft));
         }
 
         function getAircraftColor(aircraft) {
@@ -222,9 +709,13 @@
             const icao = getSelectedIcao();
 
             if (!icao) {
-                alert("Please enter an airport ICAO code.");
+                showStatusMessage("Please enter an airport ICAO code.", "error");
                 return;
             }
+
+            setAirportLoading(true);
+            showStatusMessage("Loading airport...");
+            updateStatusIndicators();
 
             try {
                 const response = await fetch("/airport/load", {
@@ -234,22 +725,37 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`Failed to load airport: ${response.status}`);
+                    const detail = await readErrorDetail(response);
+                    throw new Error(detail || `Unable to georeference ${icao}.`);
                 }
 
                 const airport = await response.json();
 
                 state.currentAirport = airport;
+                state.aircraft = [];
                 state.expandedAircraft.clear();
+                state.lastAircraftRefresh = null;
 
                 map.setView([airport.center_lat, airport.center_lon], DEFAULT_ZOOM);
 
                 await loadAirportDiagram(airport.diagram_url, airport.corners_url);
-                await loadAircraft();
+
+                showStatusMessage(`Loaded ${airport.icao}.`, "success");
+
+                if (state.liveTrafficEnabled) {
+                    await loadAircraft();
+                    restartAircraftPolling(false);
+                } else {
+                    stopAircraftPolling();
+                    renderAircraft();
+                }
 
             } catch (error) {
                 console.error("Airport load error:", error);
-                alert("Unable to load airport. Check the ICAO code and backend logs.");
+                showStatusMessage(error.message, "error");
+            } finally {
+                setAirportLoading(false);
+                updateStatusIndicators();
             }
         }
 
@@ -288,9 +794,25 @@
                     opacity: getSelectedOpacity(),
                     interactive: false
                 }
-            ).addTo(map);
+            );
+
+            updateAirportOverlayVisibility();
 
             map.fitBounds([topLeft, topRight, bottomLeft]);
+        }
+
+        function updateAirportOverlayVisibility() {
+            if (!state.airportOverlay) {
+                return;
+            }
+
+            const hasOverlay = map.hasLayer(state.airportOverlay);
+
+            if (state.isDiagramVisible && !hasOverlay) {
+                state.airportOverlay.addTo(map);
+            } else if (!state.isDiagramVisible && hasOverlay) {
+                map.removeLayer(state.airportOverlay);
+            }
         }
 
         /*
@@ -299,7 +821,7 @@
             can view different airports at the same time.
         */
         async function loadAircraft() {
-            if (!state.currentAirport) {
+            if (!state.currentAirport || !state.liveTrafficEnabled) {
                 return;
             }
 
@@ -314,14 +836,51 @@
                     throw new Error(`Failed to load aircraft: ${response.status}`);
                 }
 
-                const aircraft = await response.json();
+                state.aircraft = await response.json();
+                state.lastAircraftRefresh = new Date();
 
-                clearAircraftMarkers();
-                aircraft.forEach(addAircraftMarker);
+                renderAircraft();
 
             } catch (error) {
                 console.error("Aircraft load error:", error);
+                showStatusMessage(`Unable to refresh aircraft: ${error.message}`, "error");
+                updateStatusIndicators();
             }
+        }
+
+        function startAircraftPolling() {
+            if (!state.currentAirport || !state.liveTrafficEnabled) {
+                return;
+            }
+
+            state.aircraftRefreshTimer = window.setInterval(loadAircraft, getSelectedRefreshMs());
+        }
+
+        function stopAircraftPolling() {
+            if (state.aircraftRefreshTimer) {
+                window.clearInterval(state.aircraftRefreshTimer);
+                state.aircraftRefreshTimer = null;
+            }
+        }
+
+        function restartAircraftPolling(fetchImmediately) {
+            stopAircraftPolling();
+
+            if (!state.liveTrafficEnabled || !state.currentAirport) {
+                return;
+            }
+
+            if (fetchImmediately) {
+                loadAircraft();
+            }
+
+            startAircraftPolling();
+        }
+
+        function renderAircraft() {
+            clearAircraftMarkers();
+            getVisibleAircraft().forEach(addAircraftMarker);
+            updateStatusIndicators();
         }
 
         function clearAircraftMarkers() {
@@ -345,7 +904,8 @@
                     radius: 4,
                     color: markerColor,
                     fillColor: markerColor,
-                    fillOpacity: 1
+                    fillOpacity: 1,
+                    bubblingMouseEvents: false
                 }
             ).addTo(map);
 
@@ -359,7 +919,13 @@
                 }
             );
 
-            marker.on("click", () => toggleAircraftLabel(aircraftId));
+            marker.on("click", (event) => {
+                if (event.originalEvent) {
+                    L.DomEvent.stopPropagation(event.originalEvent);
+                }
+
+                toggleAircraftLabel(aircraftId);
+            });
 
             /*
                 Leaflet tooltips are separate DOM elements, so clicking the label
@@ -373,8 +939,10 @@
                     return;
                 }
 
+                L.DomEvent.disableClickPropagation(tooltipElement);
+
                 tooltipElement.onclick = (clickEvent) => {
-                    clickEvent.stopPropagation();
+                    L.DomEvent.stopPropagation(clickEvent);
                     toggleAircraftLabel(aircraftId);
                 };
             });
@@ -389,11 +957,11 @@
                 state.expandedAircraft.add(aircraftId);
             }
 
-            loadAircraft();
+            renderAircraft();
         }
 
+        updateStatusIndicators();
         loadAirport();
-        setInterval(loadAircraft, AIRCRAFT_REFRESH_MS);
     </script>
 
 </body>

@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from airport_data import get_aircraft_data
-from diagram_web import prepare_airport_for_web
+from airport_lookup import find_nearest_airport
+from diagram_web import GeoreferencingError, prepare_airport_for_web
 
 
 # Create the FastAPI application.
@@ -71,6 +72,25 @@ def aircraft(lat: float, lon: float, dist: int = 2) -> list[dict]:
     return get_aircraft_data(lat, lon, dist)
 
 
+@app.get("/airport/nearest")
+def nearest_airport(lat: float, lon: float) -> dict:
+    """
+    Return the nearest supported airport for a clicked map location.
+
+    This endpoint only resolves a click into an airport code. The frontend then
+    sends that code through the existing /airport/load georeferencing pipeline.
+    """
+    airport = find_nearest_airport(lat, lon)
+
+    if airport is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No supported airport found near clicked location.",
+        )
+
+    return airport
+
+
 @app.post("/airport/load")
 def load_airport(request: AirportRequest) -> dict:
     """
@@ -93,6 +113,14 @@ def load_airport(request: AirportRequest) -> dict:
     except ValueError as exc:
         # Validation errors, such as invalid ICAO format, should return 400.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    except GeoreferencingError as exc:
+        # Expected georeferencing failures should be visible to the browser.
+        icao = request.icao.upper().strip()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unable to georeference {icao}: {exc}",
+        ) from exc
 
     except Exception as exc:
         # Unexpected failures are logged in the backend and returned as 500.
