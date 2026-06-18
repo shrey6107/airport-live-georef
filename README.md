@@ -1,4 +1,4 @@
-# Airport Traffic Visualization
+# Airport Traffic Visualization & Operations Analytics
 
 ## Updates
 
@@ -41,9 +41,76 @@
 
 ---
 
+## How to Run
+
+### Requirements
+- Python 3.11+
+- Internet connection
+
+### 1. Create a virtual environment
+
+MacOS / Linux
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Windows
+```bash
+python3 -m venv .venv
+.venv\Scripts\activate
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Run the script
+
+```bash
+cd web_app
+uvicorn main:app
+```
+The application will be available at
+```bash
+http://127.0.0.1:8000
+```
+Open the URL in a browser.
+
+### 4. Load an airport
+
+You can load an airport in two ways:
+
+* Enter an ICAO code (e.g., KSFO, KLAX, KORD) and click Load Airport
+* Click an airport directly on the map and select Load Airport from the popup
+
+The system will automatically:
+
+1. Download the FAA airport diagram (if required)
+2. Georeference the diagram
+3. Generate the GeoTIFF and web overlay assets
+4. Display the airport diagram in the browser
+
+### 5. Enable live traffic
+
+When live traffic is enabled, the application:
+
+1. Queries the ADS-B API
+2. Retrieves nearby aircraft telemetry
+3. Projects aircraft positions onto the georeferenced airport diagram
+4. Updates aircraft positions in real time
+
+---
+
 ## Overview
 
-This project is a geospatial data pipeline and real-time visualization system that converts FAA airport diagrams into geo-referenced maps and overlays live aircraft traffic using ADS-B data.
+This project automatically converts FAA Airport Diagram PDFs into geo-referenced maps and overlays real-time aircraft traffic using ADS-B telemetry.
+
+The system extracts latitude/longitude reference information directly from airport diagrams, generates GeoTIFFs without relying on external coordinate datasets, and provides both desktop and web-based visualization of airport traffic.
+
+The project also includes aircraft event classification logic capable of identifying arrivals, departures, and go-arounds from live ADS-B telemetry. Classified events are stored in SQLite and can be used for operational analytics such as runway utilization, traffic volume analysis, aircraft type distribution, and peak activity periods.
 
 The goal was to turn static airport diagrams into dynamic systems that allow real-time visualization and analysis of aircraft movement on the ground.
 
@@ -94,13 +161,41 @@ I built the project to solve this problem by combining both of them into a singl
 
 ## Tech Stack
 
-- Python
-- PyMuPDF – PDF parsing & vector extraction  
-- rasterio – geospatial transformations & GeoTIFF generation  
-- pyproj – coordinate transformations  
-- NumPy – data processing  
-- PyQt6 + pyqtgraph – real-time visualization  
-- Requests – API integration  
+Backend
+
+* Python
+* FastAPI
+* Uvicorn
+
+Frontend
+
+* HTML
+* CSS
+* JavaScript
+* Leaflet
+
+Geospatial Processing
+
+* PyMuPDF
+* Rasterio
+* PyProj
+* GeoTIFF
+
+Data Processing
+
+* NumPy
+* SQLite
+
+Visualization
+
+* Leaflet
+* PyQt6
+* pyqtgraph
+
+Data Sources
+
+* FAA Airport Diagram PDFs
+* ADS-B REST APIs 
 
 ---
 
@@ -112,35 +207,7 @@ I built the project to solve this problem by combining both of them into a singl
 
 ---
 
-## How to Run
-
-### 1. Install dependencies
-
-```bash
-pip install pymupdf rasterio pyproj pyqt6 pyqtgraph requests numpy
-```
-
-### 2. Run the script
-
-```bash
-python airport_live_georef.py
-```
-
-### 3. What you’ll see
-
-- Airport diagram (GeoTIFF)
-- Live aircraft positions updating in real time
-- Aircraft labels (callsign, altitude, track, vertical speed)
-
----
-
 ## Future Improvements
 
-- Better label rendering / clustering
-- Web-based visualization (instead of PyQt)
-- Airport operations analytics:
-  - runway usage  
-  - aircraft type distribution  
-  - peak traffic periods  
-- Integration with historical ADS-B datasets for deeper analytics
-
+- Cloud deployment / 24x7 event
+- ATC audio integration and transcription
