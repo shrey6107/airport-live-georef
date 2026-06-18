@@ -2,6 +2,10 @@
 
 ## Updates
 
+### 06-17-26
+1. Added click to load support in the web app. Airports can now be selected directly on the map, no need to manually enter airport code before loading and georeferencing the airport diagram.
+2. Improved georeferencing fault detection. The script now detects common failures like unreadable lat/lon labels, unsupported PDF diagrams and affine transform failures when georeferencing cannot be completed.
+
 ### 06-10-26
 1. Added final landing/takeoff/go-around detection script with SQLite database to store classified events with metadata (event time, callsign, aircraft type, airport name) to gain operational insights.
 
