@@ -11,7 +11,7 @@ import requests
 
 
 REQUEST_TIMEOUT_SECONDS = 5
-ADSB_BASE_URL = "https://api.adsb.lol/v2"
+ADSB_BASE_URL = "http://api.airplanes.live/v2/"
 
 # Reuse one HTTP session instead of creating a new connection for every request.
 HTTP_SESSION = requests.Session()
@@ -110,7 +110,7 @@ def get_aircraft_data(lat, lon, dist=2):
     if lat is None or lon is None:
         return []
 
-    url = f"{ADSB_BASE_URL}/lat/{lat}/lon/{lon}/dist/{dist}"
+    url = f"{ADSB_BASE_URL}/point/{lat}/{lon}/{dist}"
 
     try:
         response = HTTP_SESSION.get(
