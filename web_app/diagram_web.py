@@ -25,7 +25,7 @@ from PIL import Image
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(ROOT_DIR))
 
-from georeferencing import (
+from georeferencing_with_glyph_fallback import (
     GeoreferencingError,
     ensure_geotiff_exists,
     get_geotiff_center_lon_lat,
