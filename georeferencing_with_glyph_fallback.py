@@ -1,22 +1,93 @@
+import json
 import os
 import re
+import sys
 import math
+from pathlib import Path
 import pymupdf
 import rasterio
 import requests
+import xml.etree.ElementTree as ET
 
 from rasterio.control import GroundControlPoint
 from rasterio.transform import from_gcps
 
 HTTP_SESSION = requests.Session()
 
-AIRPORT_NAME = "KMEM"
+AIRPORT_NAME = "KDEN"
 
 TEMP_PNG_PATH = "temp_airport_diagram.png"
 
 DPI = 220
 
+DTPP_CYCLE = "2607"
+PROJECT_ROOT = Path(__file__).resolve().parent
+WEB_APP_DIR = PROJECT_ROOT / "web_app"
+AIRPORT_STUFF_DIR = WEB_APP_DIR / "airport_stuff"
+OLD_AIRPORT_PDFS_DIR = AIRPORT_STUFF_DIR / "pdfs"
+OLD_AIRPORT_GEOTIFFS_DIR = AIRPORT_STUFF_DIR / "geotiffs"
+DTPP_METAFILE_PATH = PROJECT_ROOT / "d-TPP_Metafile.xml"
+
 MIN_CONTROL_POINTS_PER_AXIS = 2
+
+EXTRACTION_METHOD_TEXT = "text"
+EXTRACTION_METHOD_GLYPH = "glyph"
+EXTRACTION_METHOD_UNKNOWN = "unknown"
+
+
+def normalize_airport_code(icao: str) -> str:
+    return icao.upper().strip()
+
+
+def get_airport_storage_paths(icao: str) -> tuple[Path, Path, Path]:
+    icao = normalize_airport_code(icao)
+    airport_dir = AIRPORT_STUFF_DIR / icao
+    pdf_path = airport_dir / f"{icao}_apd.pdf"
+    geotiff_path = airport_dir / f"{icao}_apd_affine.tif"
+    return airport_dir, pdf_path, geotiff_path
+
+
+def ensure_airport_stuff_dirs(icao: str | None = None) -> None:
+    if icao is None:
+        AIRPORT_STUFF_DIR.mkdir(parents=True, exist_ok=True)
+        return
+
+    airport_dir, _, _ = get_airport_storage_paths(icao)
+    airport_dir.mkdir(parents=True, exist_ok=True)
+
+
+def get_airport_pdf_path(airport_name: str) -> Path:
+    _, pdf_path, _ = get_airport_storage_paths(airport_name)
+    return pdf_path
+
+
+def get_airport_geotiff_path(airport_name: str) -> Path:
+    _, _, geotiff_path = get_airport_storage_paths(airport_name)
+    return geotiff_path
+
+
+def migrate_old_airport_file(old_path: Path, new_path: Path) -> None:
+    if new_path.exists() or not old_path.exists():
+        return
+
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.replace(new_path)
+    print(f"Migrated airport file: {old_path} -> {new_path}")
+
+
+def migrate_old_airport_storage(icao: str, pdf_path: Path, geotiff_path: Path) -> None:
+    icao = normalize_airport_code(icao)
+    migrate_old_airport_file(OLD_AIRPORT_PDFS_DIR / f"{icao}.pdf", pdf_path)
+    migrate_old_airport_file(
+        OLD_AIRPORT_GEOTIFFS_DIR / f"{icao}_affine.tif",
+        geotiff_path,
+    )
+
+    old_metadata_path = (
+        OLD_AIRPORT_GEOTIFFS_DIR / f"{icao}_affine.tif.metadata.json"
+    )
+    new_metadata_path = Path(get_extraction_metadata_path(str(geotiff_path)))
+    migrate_old_airport_file(old_metadata_path, new_metadata_path)
 
 
 class GeoreferencingError(RuntimeError):
@@ -41,6 +112,49 @@ class AffineTransformError(GeoreferencingError):
 
 class GeoTiffValidationError(GeoreferencingError):
     """Raised when a GeoTIFF is missing georeferencing metadata."""
+
+
+def normalize_extraction_method(method: str | None) -> str:
+    if method in ("words", EXTRACTION_METHOD_TEXT):
+        return EXTRACTION_METHOD_TEXT
+
+    if method in ("glyphs", EXTRACTION_METHOD_GLYPH):
+        return EXTRACTION_METHOD_GLYPH
+
+    return EXTRACTION_METHOD_UNKNOWN
+
+
+def get_extraction_metadata_path(tif_path: str) -> str:
+    return f"{tif_path}.metadata.json"
+
+
+def read_extraction_method(tif_path: str) -> str:
+    try:
+        with open(get_extraction_metadata_path(tif_path), encoding="utf-8") as file:
+            metadata = json.load(file)
+
+    except (OSError, ValueError):
+        return EXTRACTION_METHOD_UNKNOWN
+
+    return normalize_extraction_method(metadata.get("extraction_method"))
+
+
+def write_extraction_method(tif_path: str, method: str) -> None:
+    metadata = {
+        "extraction_method": normalize_extraction_method(method),
+    }
+
+    try:
+        with open(
+            get_extraction_metadata_path(tif_path),
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(metadata, file, indent=2)
+
+    except OSError:
+        # Debug metadata should never break diagram generation.
+        return
 
 
 def is_identity_transform(transform) -> bool:
@@ -85,29 +199,6 @@ def validate_geotiff(tif_path: str) -> None:
         ) from exc
 
 
-def fix_coordinate(coord: str) -> str:
-
-    match = re.match(r"(\d+)°(\d+(?:\.\d+)?)'([NW])", coord)
-
-    if not match:
-        return coord
-
-    degrees, minutes, hemisphere = match.groups()
-
-    max_degrees = 90 if hemisphere in ("N", "S") else 180
-
-    if int(degrees) <= max_degrees:
-        return coord
-
-    while len(degrees) > 1 and int(degrees) > max_degrees:
-        degrees = degrees[1:]
-
-    if int(degrees) <= max_degrees:
-        return f"{degrees}°{minutes}'{hemisphere}"
-
-    return coord
-
-
 def glyph_distance(a, b) -> float:
     if len(a) != len(b):
         return float("inf")
@@ -124,7 +215,7 @@ def rotate_minus_90(points):
     return [(round(1 - y, 3), round(x, 3)) for x, y in points]
 
 
-def fuzzy_match_glyph(value, glyph_to_path, threshold=0.01):
+def fuzzy_match_glyph(value, glyph_to_path, threshold=0.02):
     best_key = None
     best_dist = float("inf")
 
@@ -261,15 +352,55 @@ GLYPH_TO_PATH = {
 # -----------------------------------------------------------------------------
 # FAA airport diagram download
 # -----------------------------------------------------------------------------
-def download_airport_diagram(airport_name: str, pdf_path: str) -> None:
+def build_icao_lookup(xml_file: str | Path) -> dict[str, str]:
+    root = ET.parse(xml_file).getroot()
 
-    if os.path.exists(pdf_path):
+    lookup = {}
+
+    for airport in root.iter("airport_name"):
+        icao = airport.attrib.get("icao_ident")
+        alnum = airport.attrib.get("alnum")
+
+        if icao and alnum:
+            lookup[icao.upper()] = alnum.zfill(5)
+
+    return lookup
+
+
+def get_dtpp_metafile_path() -> Path:
+    if DTPP_METAFILE_PATH.exists():
+        return DTPP_METAFILE_PATH
+
+    raise AirportDiagramDownloadError("d-TPP_Metafile.xml not found.")
+
+
+def download_airport_diagram(airport_name: str, pdf_path: str | Path) -> None:
+    airport_name = normalize_airport_code(airport_name)
+    pdf_path = Path(pdf_path)
+
+    if pdf_path.exists():
         print(f"{pdf_path} already exists")
         return
 
-    url = (
-        f"https://www.flightaware.com/resources/airport/{airport_name}/APD/AIRPORT+DIAGRAM/pdf"
-    )
+    try:
+        lookup = build_icao_lookup(get_dtpp_metafile_path())
+
+    except ET.ParseError as exc:
+        raise AirportDiagramDownloadError(
+            "d-TPP_Metafile.xml could not be parsed."
+        ) from exc
+
+    except OSError as exc:
+        raise AirportDiagramDownloadError(
+            "d-TPP_Metafile.xml not found."
+        ) from exc
+
+    if airport_name not in lookup:
+        raise AirportDiagramDownloadError(
+            f"No FAA airport diagram found for {airport_name}."
+        )
+
+    url = f"https://aeronav.faa.gov/d-tpp/{DTPP_CYCLE}/{lookup[airport_name]}AD.PDF"
 
     try:
         response = HTTP_SESSION.get(url, timeout=30)
@@ -277,22 +408,24 @@ def download_airport_diagram(airport_name: str, pdf_path: str) -> None:
 
     except requests.RequestException as exc:
         raise AirportDiagramDownloadError(
-            f"Failed to download airport diagram for {airport_name}: {exc}"
+            f"Failed to download FAA airport diagram for {airport_name}."
         ) from exc
 
     # Save only responses that look like actual PDFs.
     if not response.content or not response.content.lstrip().startswith(b"%PDF"):
         raise AirportDiagramDownloadError(
-            f"Downloaded airport diagram for {airport_name} is not a PDF"
+            f"Failed to download FAA airport diagram for {airport_name}."
         )
 
     try:
-        with open(pdf_path, "wb") as file:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with pdf_path.open("wb") as file:
             file.write(response.content)
 
     except OSError as exc:
         raise AirportDiagramDownloadError(
-            f"Could not save airport diagram PDF {pdf_path}: {exc}"
+            f"Failed to download FAA airport diagram for {airport_name}."
         ) from exc
 
     print(f"Downloaded airport diagram: {pdf_path}")
@@ -326,8 +459,8 @@ def extract_glyph_coordinate_labels(
     for path in page.get_drawings():
 
         x0, y0, x1, y1 = path["rect"]
-        height = y1 - y0
-        width = x1 - x0
+        height = abs(y1 - y0)
+        width = abs(x1 - x0)
 
         if width == 0 or height == 0:
             continue
@@ -355,7 +488,9 @@ def extract_glyph_coordinate_labels(
         key, _ = fuzzy_match_glyph(value, GLYPH_TO_PATH)
 
         if key is None:
-            continue
+            key = "/"
+
+        key = str(key)
 
         glyphs.append(
             {
@@ -366,36 +501,39 @@ def extract_glyph_coordinate_labels(
 
         text += key
 
-    coord_pattern = re.compile(
+    pattern = re.compile(
         r"""
-        \d{1,3}
-        °
-        \d{1,2}
-        (?:\.\d+)?
-        '
-        [NW]
+        (?:
+            \d{2}°\d{1,2}(?:\.\d+)?'N   # N: exactly 2 digits before °
+          |
+            \d{2,3}°\d{1,2}(?:\.\d+)?'W # W: exactly 2 or 3 digits before °
+        )
         """,
         re.VERBOSE,
     )
 
     coords_dict = {}
 
-    for match in coord_pattern.finditer(text):
+    for match in re.finditer(pattern, text):
 
-        raw_coord = match.group()
-        fixed_coord = fix_coordinate(raw_coord)
-        matched_glyphs = glyphs[match.start():match.end()]
-        matched_rects = [glyph["rect"] for glyph in matched_glyphs]
+        coord = match.group()
 
-        if not matched_rects:
-            continue
+        start_idx = match.start()
+        end_idx = match.end() - 1
 
-        x0 = min(rect[0] for rect in matched_rects)
-        y0 = min(rect[1] for rect in matched_rects)
-        x1 = max(rect[2] for rect in matched_rects)
-        y1 = max(rect[3] for rect in matched_rects)
+        first_rect = glyphs[start_idx]["rect"]
+        last_rect = glyphs[end_idx]["rect"]
 
-        coords_dict[fixed_coord] = (x0, y0, x1, y1)
+        x0 = first_rect[0]
+        y0 = first_rect[1]
+        x1 = last_rect[2]
+        y1 = last_rect[3]
+
+        coords_dict[coord] = (x0, y0, x1, y1)
+
+        print()
+        print(f"Coords: {coords_dict}")
+        print()
 
     return coords_dict
 
@@ -504,16 +642,31 @@ def get_coordinate_labels_and_orientation(
     pdf_path: str,
 ) -> tuple[dict[str, tuple[float, float, float, float]], bool]:
 
+    coords_dict, north_up_flag, _ = get_coordinate_labels_orientation_and_method(
+        pdf_path
+    )
+
+    return coords_dict, north_up_flag
+
+
+def get_coordinate_labels_orientation_and_method(
+    pdf_path: str,
+) -> tuple[dict[str, tuple[float, float, float, float]], bool, str]:
+
     with pymupdf.open(pdf_path) as doc:
 
         page = doc[0]
         north_up_flag = get_north_up_orientation(page)
-        coords_dict, _ = extract_coordinate_labels_with_fallback(
+        coords_dict, extraction_method = extract_coordinate_labels_with_fallback(
             page,
             north_up_flag,
         )
 
-    return coords_dict, north_up_flag
+    return (
+        coords_dict,
+        north_up_flag,
+        normalize_extraction_method(extraction_method),
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -558,7 +711,7 @@ def get_gridline_control_values(
     vertical_pts = []
     horizontal_pts = []
 
-    edge_tolerance = 0.5
+    edge_tolerance = 3
 
     for path in paths:
 
@@ -569,16 +722,16 @@ def get_gridline_control_values(
 
         x0, y0, x1, y1 = path["rect"]
 
-        if Y0 - edge_tolerance <= y0 <= Y0 + edge_tolerance and X0 < x0 < X1:
+        if min(Y0 - edge_tolerance, Y0 + edge_tolerance) <= y0 <= max(Y0 - edge_tolerance, Y0 + edge_tolerance) and X0 < x0 < X1:
             vertical_pts.append(x0)
 
-        elif Y1 - edge_tolerance <= y1 <= Y1 + edge_tolerance and X0 < x1 < X1:
+        elif min(Y1 - edge_tolerance, Y1 + edge_tolerance) <= y1 <= max(Y1 - edge_tolerance, Y1 + edge_tolerance) and X0 < x1 < X1:
             vertical_pts.append(x1)
 
-        if X0 - edge_tolerance<= x0 <= X0 + edge_tolerance and Y0 < y0 < Y1:
+        if min(X0 - edge_tolerance, X0 + edge_tolerance) <= x0 <= max(X0 - edge_tolerance, X0 + edge_tolerance) and Y0 < y0 < Y1:
             horizontal_pts.append(y0)
 
-        elif X1 - edge_tolerance <= x1 <= X1 + edge_tolerance and Y0 < y1 < Y1:
+        elif min(X1 - edge_tolerance, X1 + edge_tolerance) <= x1 <= max(X1 - edge_tolerance, X1 + edge_tolerance) and Y0 < y1 < Y1:
             horizontal_pts.append(y1)
 
     # Grid edge ticks are needed to place label-derived control points.
@@ -605,14 +758,14 @@ def get_gridline_control_values(
 
             for x in vertical_pts:
 
-                if x0 < x < x1:
+                if min(x0, x1) < x < max(x0, x1):
                     grid_x_dict[label] = x
 
         if y_axis_label in label:
 
             for y in horizontal_pts:
 
-                if y0 < y < y1:
+                if min(y0, y1) < y < max(y0, y1):
                     grid_y_dict[label] = y
 
     if not north_up_flag:
@@ -656,13 +809,15 @@ def parse_coord(label: str) -> float:
 # GeoTIFF generation
 # -----------------------------------------------------------------------------
 def create_georeferenced_tiff(
-    pdf_path: str,
-    output_tif_path: str,
+    pdf_path: str | Path,
+    output_tif_path: str | Path,
     x_dict: dict[str, float],
     y_dict: dict[str, float],
     north_up_flag: bool,
     dpi: int = DPI,
 ) -> None:
+    pdf_path = Path(pdf_path)
+    output_tif_path = Path(output_tif_path)
 
     if (
         len(x_dict) < MIN_CONTROL_POINTS_PER_AXIS
@@ -682,7 +837,7 @@ def create_georeferenced_tiff(
 
     scale = dpi / 72.0
 
-    temp_output_tif_path = f"{output_tif_path}.tmp"
+    temp_output_tif_path = Path(f"{output_tif_path}.tmp")
 
     try:
 
@@ -758,8 +913,10 @@ def create_georeferenced_tiff(
             transform=transform,
         )
 
-        if os.path.exists(temp_output_tif_path):
-            os.remove(temp_output_tif_path)
+        output_tif_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if temp_output_tif_path.exists():
+            temp_output_tif_path.unlink()
 
         with rasterio.open(temp_output_tif_path, "w", **profile) as dst:
             dst.write(data)
@@ -770,8 +927,8 @@ def create_georeferenced_tiff(
 
     except Exception:
 
-        if os.path.exists(temp_output_tif_path):
-            os.remove(temp_output_tif_path)
+        if temp_output_tif_path.exists():
+            temp_output_tif_path.unlink()
 
         raise
 
@@ -797,12 +954,12 @@ def get_geotiff_center_lon_lat(tif_path: str) -> tuple[float, float]:
         return float(lon), float(lat)
 
 def ensure_geotiff_exists(airport_name: str) -> str:
+    airport_name = normalize_airport_code(airport_name)
+    airport_dir, pdf_path, geotiff_path = get_airport_storage_paths(airport_name)
+    airport_dir.mkdir(parents=True, exist_ok=True)
+    migrate_old_airport_storage(airport_name, pdf_path, geotiff_path)
 
-    pdf_path = f"{airport_name}.pdf"
-
-    geotiff_path = f"{airport_name}_affine.tif"
-
-    if os.path.exists(geotiff_path):
+    if geotiff_path.exists():
 
         print(f"{geotiff_path} already exists")
 
@@ -813,7 +970,7 @@ def ensure_geotiff_exists(airport_name: str) -> str:
             print(f"{geotiff_path} is invalid and will be regenerated: {exc}")
 
             try:
-                os.remove(geotiff_path)
+                geotiff_path.unlink()
 
             except OSError as remove_exc:
                 raise GeoTiffValidationError(
@@ -822,15 +979,15 @@ def ensure_geotiff_exists(airport_name: str) -> str:
                 ) from remove_exc
 
         else:
-            return geotiff_path
+            return str(geotiff_path)
 
     download_airport_diagram(
         airport_name,
         pdf_path,
     )
 
-    coords_dict, north_up_flag = (
-        get_coordinate_labels_and_orientation(
+    coords_dict, north_up_flag, extraction_method = (
+        get_coordinate_labels_orientation_and_method(
             pdf_path
         )
     )
@@ -849,13 +1006,18 @@ def ensure_geotiff_exists(airport_name: str) -> str:
         north_up_flag,
     )
 
-    return geotiff_path
+    write_extraction_method(geotiff_path, extraction_method)
+
+    return str(geotiff_path)
 
 def main() -> None:
     airport_name = AIRPORT_NAME
 
+    if len(sys.argv) > 1:
+        airport_name = sys.argv[1].upper()
+
     geotiff_path = ensure_geotiff_exists(
-        airport_name.upper()
+        airport_name
     )
 
     center_lon, center_lat = (

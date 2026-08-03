@@ -1,34 +1,19 @@
-"""
-ADS-B aircraft data access layer.
-
-This module is responsible for:
-    1. Requesting live aircraft data from the ADS-B API.
-    2. Cleaning each raw aircraft object.
-    3. Returning only the fields needed by the Leaflet frontend.
-"""
+"""Fetch and normalize live ADS-B aircraft data for the web app."""
 
 import requests
 
+from aircraft_track_history import get_track, update_tracks
+
 
 REQUEST_TIMEOUT_SECONDS = 5
-ADSB_BASE_URL = "http://api.airplanes.live/v2/"
+ADSB_BASE_URL = "https://api.airplanes.live/v2"
 
 # Reuse one HTTP session instead of creating a new connection for every request.
 HTTP_SESSION = requests.Session()
 
 
 def classify_aircraft_status(vertical_rate):
-    """
-    Classify aircraft using vertical speed.
-
-    This is a simple display-oriented rule:
-        - Positive vertical rate  -> Taking off / climbing
-        - Negative vertical rate  -> Landing / descending
-        - Missing or non-numeric   -> N/A
-
-    Later, this can be replaced with your more advanced runway-heading and
-    landing/takeoff detection logic.
-    """
+    """Classify aircraft for display using the existing vertical-speed rule."""
     if not isinstance(vertical_rate, (int, float)):
         return "N/A"
 
@@ -42,17 +27,7 @@ def classify_aircraft_status(vertical_rate):
 
 
 def normalize_altitude(altitude):
-    """
-    Normalize altitude values for display.
-
-    ADS-B altitude can be:
-        - a number, such as 3500
-        - a negative number near the ground, such as -25
-        - a string, such as "ground"
-
-    Negative numeric altitudes are clamped to 0. Non-numeric values are kept
-    unchanged because values like "ground" are meaningful.
-    """
+    """Clamp negative numeric altitudes while preserving values like "ground"."""
     if isinstance(altitude, (int, float)) and altitude < 0:
         return 0
 
@@ -60,12 +35,7 @@ def normalize_altitude(altitude):
 
 
 def normalize_aircraft(ac):
-    """
-    Convert one raw ADS-B aircraft object into the frontend format.
-
-    Returns None when the aircraft has no usable latitude/longitude, because
-    Leaflet cannot display an aircraft without position data.
-    """
+    """Convert one raw aircraft object into the existing frontend format."""
     lat = ac.get("lat")
     lon = ac.get("lon")
 
@@ -95,18 +65,8 @@ def normalize_aircraft(ac):
     }
 
 
-def get_aircraft_data(lat, lon, dist=2):
-    """
-    Fetch live aircraft around a latitude/longitude point.
-
-    Args:
-        lat: Airport center latitude.
-        lon: Airport center longitude.
-        dist: Search radius in nautical miles.
-
-    Returns:
-        A list of cleaned aircraft dictionaries for the frontend.
-    """
+def get_aircraft_data(lat, lon, dist=5):
+    """Fetch live aircraft around a point and attach their path histories."""
     if lat is None or lon is None:
         return []
 
@@ -136,5 +96,10 @@ def get_aircraft_data(lat, lon, dist=2):
 
         if normalized is not None:
             aircraft.append(normalized)
+
+    update_tracks(aircraft)
+
+    for normalized in aircraft:
+        normalized["path"] = get_track(normalized.get("hex"))
 
     return aircraft

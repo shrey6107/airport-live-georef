@@ -2,7 +2,7 @@ import pymupdf
 import rasterio
 import math
 
-from georeferencing import ensure_geotiff_exists
+from georeferencing import ensure_geotiff_exists, get_airport_pdf_path
 
 AIRPORT_NAME = "KORD"
 
@@ -76,7 +76,7 @@ def is_runway_path(
     min_aspect_ratio=20,
     min_width=2,
     max_width=12,
-    max_points=15
+    max_points=70
 ):
     """
     Detect whether a PDF drawing path is likely a runway.
@@ -90,7 +90,9 @@ def is_runway_path(
 
     points = extract_unique_line_points(path)
 
-    # Ignore complex shapes; runway polygons are usually simple.
+    # Ignore highly complex shapes. Newer FAA diagrams can combine a runway
+    # polygon and its markings into one path, so valid runways may contain
+    # several dozen points.
     if len(points) >= max_points:
         return False, None
 
@@ -196,14 +198,11 @@ def calculate_heading(lat1, lon1, lat2, lon2):
     return round((heading + 360) % 360)
 
 def get_airport_runway_headings(airport_name: str) -> set[int]:
-
-    pdf_path = f"{airport_name}.pdf"
-
     geotiff_path = ensure_geotiff_exists(airport_name)
+    pdf_path = get_airport_pdf_path(airport_name)
 
-    page = pymupdf.open(pdf_path)[0]
-
-    paths = page.get_drawings()
+    with pymupdf.open(pdf_path) as document:
+        paths = document[0].get_drawings()
 
     _, unique_headings = detect_runways(paths, geotiff_path)
 
@@ -212,10 +211,10 @@ def get_airport_runway_headings(airport_name: str) -> set[int]:
 if __name__ == "__main__":
 
     geotiff_path = ensure_geotiff_exists(AIRPORT_NAME)
+    pdf_path = get_airport_pdf_path(AIRPORT_NAME)
 
-    page = pymupdf.open(f"{AIRPORT_NAME}.pdf")[0]
-
-    paths = page.get_drawings()
+    with pymupdf.open(pdf_path) as document:
+        paths = document[0].get_drawings()
 
     runway_path, unique_headings = detect_runways(paths, geotiff_path)
 

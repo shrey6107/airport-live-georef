@@ -9,6 +9,8 @@
 
     <!-- Leaflet map styling. -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet"
+        href="https://cesium.com/downloads/cesiumjs/releases/1.143/Build/Cesium/Widgets/widgets.css" />
 
     <style>
         html,
@@ -24,9 +26,32 @@
         }
 
         /* 100dvh works better on mobile because browser toolbars can change visible height. */
-        #map {
+        #map-view-container,
+        #map,
+        #cesium-map-container {
             height: 100dvh;
             width: 100vw;
+        }
+
+        #map-view-container {
+            position: relative;
+        }
+
+        #map,
+        #cesium-map-container {
+            inset: 0;
+            position: absolute;
+        }
+
+        /* Cesium, rather than the page, owns drag and pinch gestures in 3D. */
+        #cesium-map-container,
+        #cesium-map-container canvas {
+            overscroll-behavior: contain;
+            touch-action: none;
+        }
+
+        [hidden] {
+            display: none !important;
         }
 
         /* Compact floating dashboard panel, placed away from Leaflet zoom controls. */
@@ -48,9 +73,51 @@
             z-index: 1000;
         }
 
+        #controls.is-dashboard-collapsed {
+            overflow: visible;
+            padding: 6px;
+            width: auto;
+        }
+
+        #controls.is-dashboard-collapsed #dashboard-primary-controls,
+        #controls.is-dashboard-collapsed #dashboard-body {
+            display: none;
+        }
+
+        .dashboard-top-row {
+            align-items: center;
+            display: flex;
+            gap: 6px;
+        }
+
+        #dashboard-toggle-btn {
+            align-items: center;
+            background: #f9fafb;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            cursor: pointer;
+            display: inline-flex;
+            flex: 0 0 auto;
+            height: 32px;
+            justify-content: center;
+            line-height: 1;
+            min-width: 34px;
+            padding: 0 8px;
+        }
+
+        #dashboard-toggle-btn:hover {
+            background: #f3f4f6;
+        }
+
+        #dashboard-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
         /*
             The dashboard header stays visible even when advanced controls are collapsed.
-            It contains the ICAO input, load button, expand/collapse button, and status message.
+            It contains the chart list and status message below the primary row.
         */
         .dashboard-header {
             display: flex;
@@ -61,7 +128,212 @@
         .airport-load-row {
             align-items: center;
             display: flex;
+            flex: 1;
             gap: 6px;
+            min-width: 0;
+        }
+
+        .map-view-switcher {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .map-view-switcher button {
+            background: #f9fafb;
+            border: 1px solid #9ca3af;
+            cursor: pointer;
+            padding: 6px 10px;
+        }
+
+        .map-view-switcher button:first-child {
+            border-radius: 5px 0 0 5px;
+        }
+
+        .map-view-switcher button:last-child {
+            border-left: 0;
+            border-radius: 0 5px 5px 0;
+        }
+
+        .map-view-switcher button.is-active {
+            background: #1d4ed8;
+            border-color: #1d4ed8;
+            color: white;
+            font-weight: bold;
+        }
+
+        .map-view-help {
+            color: #4b5563;
+            font-size: 12px;
+            line-height: 1.3;
+            margin-top: -3px;
+        }
+
+        .touch-controls-help {
+            display: none;
+        }
+
+        @media (pointer: coarse) {
+            .desktop-controls-help {
+                display: none;
+            }
+
+            .touch-controls-help {
+                display: inline;
+            }
+        }
+
+        .cesium-reset-view-button {
+            align-self: flex-start;
+            background: #f9fafb;
+            border: 1px solid #9ca3af;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 5px 8px;
+        }
+
+        .cesium-aircraft-details {
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 6px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
+            box-sizing: border-box;
+            left: 12px;
+            max-width: calc(100vw - 396px);
+            min-width: 240px;
+            padding: 10px;
+            position: absolute;
+            top: 78px;
+            width: 300px;
+            z-index: 900;
+        }
+
+        .cesium-camera-status {
+            background: rgba(17, 24, 39, 0.88);
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+            color: white;
+            font-size: 13px;
+            left: 12px;
+            line-height: 1.35;
+            min-width: 190px;
+            padding: 8px 10px;
+            position: absolute;
+            top: 12px;
+            z-index: 900;
+        }
+
+        #cesium-camera-altitude {
+            display: block;
+            font-size: 16px;
+            margin-top: 2px;
+        }
+
+        .cesium-aircraft-details-header {
+            align-items: center;
+            display: flex;
+            gap: 8px;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        #cesium-aircraft-details-content {
+            font-size: 14px;
+            line-height: 1.45;
+            white-space: pre-line;
+        }
+
+        #cesium-aircraft-details-close {
+            background: transparent;
+            border: 0;
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            padding: 0 2px;
+        }
+
+        .chart-section {
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+        }
+
+        #chart-list-toggle {
+            align-items: center;
+            background: #f9fafb;
+            border: 0;
+            border-bottom: 1px solid #cbd5e1;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            padding: 7px 8px;
+            width: 100%;
+        }
+
+        #chart-list-toggle:hover {
+            background: #f3f4f6;
+        }
+
+        #chart-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            max-height: 190px;
+            overflow-y: auto;
+            padding: 6px;
+        }
+
+        #chart-list.is-collapsed {
+            display: none;
+        }
+
+        .chart-list-message {
+            color: #4b5563;
+            font-size: 14px;
+            line-height: 1.3;
+            padding: 4px 2px;
+        }
+
+        .chart-list-message.status-error {
+            color: #991b1b;
+        }
+
+        .chart-item-btn {
+            background: white;
+            border: 1px solid #9ca3af;
+            border-radius: 5px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            cursor: pointer;
+            padding: 6px 7px;
+            text-align: left;
+        }
+
+        .chart-item-btn:hover:not(:disabled) {
+            background: #f9fafb;
+            border-color: #9ca3af;
+        }
+
+        .chart-item-btn.is-loading {
+            background: #eff6ff;
+            border-color: #60a5fa;
+        }
+
+        .chart-item-btn.is-current,
+        .chart-item-btn.is-current:hover:not(:disabled) {
+            background: #f0fdf4;
+            border-color: #86efac;
+        }
+
+        .chart-item-name {
+            display: block;
+            font-weight: bold;
+        }
+
+        .chart-item-meta {
+            color: #4b5563;
+            display: block;
+            font-size: 12px;
+            margin-top: 2px;
         }
 
         #toggle-controls-btn {
@@ -71,9 +343,11 @@
             background: #f9fafb;
             cursor: pointer;
             display: inline-flex;
+            flex: 0 0 auto;
             height: 32px;
             justify-content: center;
             line-height: 1;
+            min-width: 34px;
             padding: 0 8px;
         }
 
@@ -98,6 +372,13 @@
             font-size: 16px;
         }
 
+        input:not([type="checkbox"]):not([type="range"]),
+        select {
+            border: 1px solid #9ca3af;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            box-sizing: border-box;
+        }
         label {
             font-size: 14px;
         }
@@ -108,8 +389,18 @@
         }
 
         #icao-input {
+            flex: 0 0 90px;
+            height: 32px;
+            padding: 0 6px;
             width: 90px;
             text-transform: uppercase;
+        }
+
+        #load-airport-btn {
+            flex: 0 0 auto;
+            height: 32px;
+            padding: 0 8px;
+            white-space: nowrap;
         }
 
         #opacity-slider {
@@ -125,6 +416,10 @@
 
         .control-row.is-split {
             justify-content: space-between;
+        }
+
+        .control-row.is-end {
+            justify-content: flex-end;
         }
 
         .control-section {
@@ -197,20 +492,37 @@
                 width: auto;
             }
 
+            #controls.is-dashboard-collapsed {
+                left: auto;
+                max-height: none;
+                min-width: 46px;
+            }
+
             #icao-input {
-                width: 80px;
+                flex-basis: 72px;
+                width: 72px;
             }
 
             #opacity-slider {
                 width: 100%;
             }
 
-            #load-airport-btn {
-                margin-left: 4px;
+            .cesium-aircraft-details {
+                bottom: 62px;
+                left: 8px;
+                max-height: 40dvh;
+                max-width: none;
+                right: 8px;
+                top: auto;
+                width: auto;
             }
 
-            .airport-load-row {
-                flex-wrap: wrap;
+            .cesium-camera-status {
+                bottom: 8px;
+                left: 8px;
+                min-width: 0;
+                right: 8px;
+                top: auto;
             }
         }
 
@@ -241,91 +553,163 @@
 <body>
 
     <div id="controls">
-        <div class="dashboard-header">
-            <div class="airport-load-row">
+        <div class="dashboard-top-row">
+            <div id="dashboard-primary-controls" class="airport-load-row">
                 <input type="text" id="icao-input" placeholder="ICAO" value="KSFO">
-                <button id="load-airport-btn">Load Airport</button>
+                <button id="load-airport-btn">Find Charts</button>
 
-                <button id="toggle-controls-btn" type="button" aria-expanded="false" aria-controls="advanced-controls"
-                    title="Show controls">
+                <button id="toggle-controls-btn" type="button" aria-expanded="false"
+                    aria-controls="advanced-controls" title="Show controls">
                     ▼
                 </button>
             </div>
 
-            <!-- Status stays visible when the advanced controls are collapsed. -->
-            <div id="status-panel" class="status-panel" role="status" aria-live="polite">Ready.</div>
+            <button id="dashboard-toggle-btn" type="button" aria-expanded="true"
+                aria-controls="dashboard-primary-controls dashboard-body" title="Hide dashboard">
+                ☰
+            </button>
         </div>
 
-        <div id="advanced-controls" class="is-collapsed">
-            <div class="control-section">
-                <div class="control-row is-split">
-                    <label for="opacity-slider">Opacity</label>
-                    <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="0.7">
+        <div id="dashboard-body">
+            <div class="dashboard-header">
+                <div class="map-view-switcher" role="group" aria-label="Map view">
+                    <button id="leaflet-view-button" class="is-active" type="button" aria-pressed="true">
+                        2D Map
+                    </button>
+                    <button id="cesium-view-button" type="button" aria-pressed="false">
+                        3D View
+                    </button>
+                </div>
+                <div id="cesium-view-help" class="map-view-help" hidden>
+                    <span class="desktop-controls-help">
+                        Drag moves/orbits. Shift-drag looks; Control-drag tilts. Scroll or pinch changes height.
+                        Camera angle is limited to 3–179°. R resets.
+                    </span>
+                    <span class="touch-controls-help">
+                        One-finger drag moves. Two-finger drag tilts/rotates; pinch zooms.
+                        Camera angle is limited to 3–179°. Reset returns top-down.
+                    </span>
+                </div>
+                <button id="cesium-reset-view-button" class="cesium-reset-view-button" type="button" hidden>
+                    Reset view (R)
+                </button>
+
+                <div class="chart-section">
+                    <button id="chart-list-toggle" type="button" aria-expanded="false" aria-controls="chart-list">
+                        <span>Available charts</span>
+                        <span id="chart-list-chevron">▼</span>
+                    </button>
+                    <div id="chart-list" class="is-collapsed" role="list" aria-live="polite">
+                        <div class="chart-list-message">Find charts for an airport first.</div>
+                    </div>
                 </div>
 
-                <div class="control-row is-split">
-                    <label>
-                        <input type="checkbox" id="diagram-toggle" checked>
-                        Diagram
-                    </label>
-
-                    <label>
-                        <input type="checkbox" id="traffic-toggle" checked>
-                        Live traffic
-                    </label>
-                </div>
-
-                <div class="control-row is-split">
-                    <label for="aircraft-filter">Aircraft</label>
-                    <select id="aircraft-filter">
-                        <option value="all" selected>All aircraft</option>
-                        <option value="airborne">Airborne only</option>
-                    </select>
-                </div>
-
-                <div class="control-row is-split">
-                    <label for="refresh-interval">Refresh</label>
-                    <select id="refresh-interval">
-                        <option value="1000">1 sec</option>
-                        <option value="2000" selected>2 sec</option>
-                        <option value="5000">5 sec</option>
-                        <option value="10000">10 sec</option>
-                    </select>
-                </div>
+                <!-- Status stays visible when the advanced controls are collapsed. -->
+                <div id="status-panel" class="status-panel" role="status" aria-live="polite">Ready.</div>
             </div>
 
-            <div class="control-section">
-                <dl class="status-grid">
-                    <dt>Airport</dt>
-                    <dd id="airport-status">KSFO</dd>
-                    <dt>Aircraft</dt>
-                    <dd id="aircraft-count-status">0</dd>
-                    <dt>Last refresh</dt>
-                    <dd id="last-refresh-status">Never</dd>
-                    <dt>Traffic</dt>
-                    <dd id="traffic-status">ON</dd>
-                    <dt>Filter</dt>
-                    <dd id="filter-status">All aircraft</dd>
-                </dl>
+            <div id="advanced-controls" class="is-collapsed">
+                <div class="control-section">
+                    <div class="control-row is-split">
+                        <label for="opacity-slider">Opacity</label>
+                        <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="0.7">
+                    </div>
 
-                <button id="clear-labels-btn">Clear labels</button>
+                    <div class="control-row is-split">
+                        <label>
+                            <input type="checkbox" id="diagram-toggle" checked>
+                            Diagram
+                        </label>
+
+                        <label>
+                            <input type="checkbox" id="traffic-toggle" checked>
+                            Live traffic
+                        </label>
+                    </div>
+
+                    <div class="control-row">
+                        <label>
+                            <input type="checkbox" id="aircraft-paths-toggle" checked>
+                            Show aircraft paths
+                        </label>
+                    </div>
+
+                    <div class="control-row is-split">
+                        <label for="aircraft-filter">Aircraft</label>
+                        <select id="aircraft-filter">
+                            <option value="all" selected>All aircraft</option>
+                            <option value="airborne">Airborne only</option>
+                        </select>
+                    </div>
+
+                    <div class="control-row is-split">
+                        <label for="refresh-interval">Refresh</label>
+                        <select id="refresh-interval">
+                            <option value="1000">1 sec</option>
+                            <option value="2000" selected>2 sec</option>
+                            <option value="5000">5 sec</option>
+                            <option value="10000">10 sec</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <dl class="status-grid">
+                        <dt>Airport</dt>
+                        <dd id="airport-status">KSFO</dd>
+                        <dt>Aircraft</dt>
+                        <dd id="aircraft-count-status">0</dd>
+                        <dt>Last refresh</dt>
+                        <dd id="last-refresh-status">Never</dd>
+                        <dt>Traffic</dt>
+                        <dd id="traffic-status">ON</dd>
+                        <dt>Filter</dt>
+                        <dd id="filter-status">All aircraft</dd>
+                    </dl>
+
+                    <div class="control-row is-end">
+                        <label>
+                            <input type="checkbox" id="debugging-toggle">
+                            Debugging
+                        </label>
+                    </div>
+
+                    <button id="clear-labels-btn">Clear labels</button>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="map"></div>
+    <aside id="cesium-aircraft-details" class="cesium-aircraft-details" aria-live="polite" hidden>
+        <div class="cesium-aircraft-details-header">
+            <strong id="cesium-aircraft-details-title">Aircraft details</strong>
+            <button id="cesium-aircraft-details-close" type="button" aria-label="Close aircraft details">×</button>
+        </div>
+        <div id="cesium-aircraft-details-content"></div>
+    </aside>
+
+    <div id="cesium-camera-status" class="cesium-camera-status" aria-label="Current 3D view altitude" hidden>
+        View altitude
+        <strong id="cesium-camera-altitude">Unavailable</strong>
+    </div>
+
+    <div id="map-view-container">
+        <div id="map"></div>
+        <div id="cesium-map-container" hidden></div>
+    </div>
 
     <!-- Leaflet map library and rotated image overlay plugin. -->
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script
         src="https://cdn.jsdelivr.net/npm/leaflet-imageoverlay-rotated@0.2.1/Leaflet.ImageOverlay.Rotated.js"></script>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.143/Build/Cesium/Cesium.js"></script>
 
     <script>
         const DEFAULT_AIRPORT_CENTER = [37.6213, -122.3790]; // KSFO fallback/start location.
         const DEFAULT_ZOOM = 13;
         const AIRCRAFT_REFRESH_MS = 2000;
-        const ADSB_RADIUS_NM = 2;
-        const CURRENT_AIRPORT_CLICK_SUPPRESSION_NM = 5;
+        const ADSB_RADIUS_NM = 10;
+        const CURRENT_AIRPORT_CLICK_SUPPRESSION_NM = 2;
 
         const AIRCRAFT_COLORS = {
             climbing: "blue",
@@ -348,14 +732,51 @@
             aircraftRefreshTimer: null,
             lastAircraftRefresh: null,
             liveTrafficEnabled: true,
+            showAircraftPaths: true,
             aircraftFilter: "all",
             isDiagramVisible: true,
-            isAirportLoading: false
+            availableCharts: [],
+            availableChartsIcao: null,
+            chartListMessage: "Find charts for an airport first.",
+            chartsExpanded: false,
+            dashboardCollapsed: false,
+            isChartsLoading: false,
+            isChartLoading: false,
+            loadingChartId: null,
+            debuggingEnabled: false
+        };
+
+        const mapViewState = {
+            activeView: "leaflet",
+            cesiumViewer: null,
+            cesiumInitialized: false,
+            cesiumAircraftEntities: new Map(),
+            cesiumAircraftPaths: new Map(),
+            cesiumFocusedAirport: null,
+            cesiumChartOverlayData: null,
+            cesiumChartEntity: null
         };
 
         const elements = {
+            controls: document.getElementById("controls"),
+            leafletMapContainer: document.getElementById("map"),
+            cesiumMapContainer: document.getElementById("cesium-map-container"),
+            cesiumViewHelp: document.getElementById("cesium-view-help"),
+            cesiumAircraftDetails: document.getElementById("cesium-aircraft-details"),
+            cesiumAircraftDetailsTitle: document.getElementById("cesium-aircraft-details-title"),
+            cesiumAircraftDetailsContent: document.getElementById("cesium-aircraft-details-content"),
+            cesiumAircraftDetailsClose: document.getElementById("cesium-aircraft-details-close"),
+            cesiumCameraStatus: document.getElementById("cesium-camera-status"),
+            cesiumCameraAltitude: document.getElementById("cesium-camera-altitude"),
+            cesiumResetViewButton: document.getElementById("cesium-reset-view-button"),
+            leafletViewButton: document.getElementById("leaflet-view-button"),
+            cesiumViewButton: document.getElementById("cesium-view-button"),
+            dashboardToggleButton: document.getElementById("dashboard-toggle-btn"),
             icaoInput: document.getElementById("icao-input"),
             loadAirportButton: document.getElementById("load-airport-btn"),
+            chartList: document.getElementById("chart-list"),
+            chartListToggle: document.getElementById("chart-list-toggle"),
+            chartListChevron: document.getElementById("chart-list-chevron"),
             opacitySlider: document.getElementById("opacity-slider"),
             statusPanel: document.getElementById("status-panel"),
             airportStatus: document.getElementById("airport-status"),
@@ -364,15 +785,18 @@
             trafficStatus: document.getElementById("traffic-status"),
             filterStatus: document.getElementById("filter-status"),
             trafficToggle: document.getElementById("traffic-toggle"),
+            aircraftPathsToggle: document.getElementById("aircraft-paths-toggle"),
             aircraftFilter: document.getElementById("aircraft-filter"),
             refreshInterval: document.getElementById("refresh-interval"),
             clearLabelsButton: document.getElementById("clear-labels-btn"),
             diagramToggle: document.getElementById("diagram-toggle"),
+            debuggingToggle: document.getElementById("debugging-toggle"),
             advancedControls: document.getElementById("advanced-controls"),
             toggleControlsButton: document.getElementById("toggle-controls-btn")
         };
 
         const map = L.map("map").setView(DEFAULT_AIRPORT_CENTER, DEFAULT_ZOOM);
+        const leafletAircraftPaths = new Map();
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             maxZoom: 19
@@ -380,13 +804,32 @@
 
         map.on("click", findAirportFromMapClick);
 
-        elements.loadAirportButton.addEventListener("click", loadAirport);
+        elements.loadAirportButton.addEventListener("click", loadAvailableCharts);
+        elements.leafletViewButton.addEventListener("click", () => switchMapView("leaflet"));
+        elements.cesiumViewButton.addEventListener("click", () => switchMapView("cesium"));
+        elements.cesiumAircraftDetailsClose.addEventListener("click", clearCesiumAircraftSelection);
+        elements.cesiumResetViewButton.addEventListener("click", resetCesiumCameraView);
 
+        elements.dashboardToggleButton.addEventListener("click", toggleDashboardPanel);
+        elements.chartListToggle.addEventListener("click", toggleChartList);
         elements.toggleControlsButton.addEventListener("click", toggleAdvancedControls);
 
         elements.icaoInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
-                loadAirport();
+                event.preventDefault();
+                loadAvailableCharts();
+            }
+        });
+
+        elements.icaoInput.addEventListener("input", () => {
+            if (
+                state.availableChartsIcao &&
+                getSelectedIcao() !== state.availableChartsIcao
+            ) {
+                state.availableCharts = [];
+                state.availableChartsIcao = null;
+                state.chartListMessage = "Find charts for an airport first.";
+                renderChartList();
             }
         });
 
@@ -394,6 +837,8 @@
             if (state.airportOverlay) {
                 state.airportOverlay.setOpacity(getSelectedOpacity());
             }
+
+            updateCesiumChartAppearance();
         });
 
         elements.trafficToggle.addEventListener("change", () => {
@@ -418,6 +863,11 @@
             updateStatusIndicators();
         });
 
+        elements.aircraftPathsToggle.addEventListener("change", () => {
+            state.showAircraftPaths = elements.aircraftPathsToggle.checked;
+            renderAircraft();
+        });
+
         elements.refreshInterval.addEventListener("change", () => {
             restartAircraftPolling(false);
             updateStatusIndicators();
@@ -433,6 +883,462 @@
             updateAirportOverlayVisibility();
         });
 
+        elements.debuggingToggle.addEventListener("change", () => {
+            state.debuggingEnabled = elements.debuggingToggle.checked;
+
+            if (state.debuggingEnabled) {
+                showDebugExtractionMethod();
+            } else if (state.currentAirport) {
+                showStatusMessage(
+                    `Loaded ${state.currentAirport.chart_name || state.currentAirport.icao}.`,
+                    "success"
+                );
+            }
+        });
+
+        function toggleDashboardPanel() {
+            setDashboardCollapsed(!state.dashboardCollapsed);
+        }
+
+        function setDashboardCollapsed(isCollapsed) {
+            state.dashboardCollapsed = isCollapsed;
+            elements.controls.classList.toggle("is-dashboard-collapsed", isCollapsed);
+            elements.dashboardToggleButton.title = isCollapsed ? "Show dashboard" : "Hide dashboard";
+            elements.dashboardToggleButton.setAttribute("aria-expanded", String(!isCollapsed));
+            scheduleActiveMapResize();
+        }
+
+        function scheduleActiveMapResize() {
+            window.requestAnimationFrame(() => {
+                if (mapViewState.activeView === "cesium" && mapViewState.cesiumViewer) {
+                    mapViewState.cesiumViewer.resize();
+                    return;
+                }
+
+                map.invalidateSize();
+            });
+        }
+
+        async function switchMapView(viewName) {
+            if (viewName !== "leaflet" && viewName !== "cesium") {
+                return;
+            }
+
+            if (viewName === "cesium" && !mapViewState.cesiumInitialized) {
+                setMapViewVisibility("cesium");
+
+                try {
+                    await initializeCesiumView();
+                } catch (error) {
+                    console.error("Cesium initialization error:", error);
+                    showStatusMessage("Unable to initialize the 3D view.", "error");
+                    setMapViewVisibility("leaflet");
+                    return;
+                }
+            }
+
+            setMapViewVisibility(viewName);
+
+            if (viewName === "cesium") {
+                updateCesiumAircraft(getVisibleAircraft());
+
+                if (getCurrentAirportCenterKey() !== mapViewState.cesiumFocusedAirport) {
+                    focusCesiumOnCurrentAirport();
+                }
+            }
+        }
+
+        function setMapViewVisibility(viewName) {
+            const isLeaflet = viewName === "leaflet";
+            mapViewState.activeView = viewName;
+            elements.leafletMapContainer.hidden = !isLeaflet;
+            elements.cesiumMapContainer.hidden = isLeaflet;
+            elements.cesiumViewHelp.hidden = isLeaflet;
+            elements.cesiumCameraStatus.hidden = isLeaflet;
+            elements.cesiumResetViewButton.hidden = isLeaflet;
+
+            if (isLeaflet) {
+                clearCesiumAircraftSelection();
+            }
+            elements.leafletViewButton.classList.toggle("is-active", isLeaflet);
+            elements.cesiumViewButton.classList.toggle("is-active", !isLeaflet);
+            elements.leafletViewButton.setAttribute("aria-pressed", String(isLeaflet));
+            elements.cesiumViewButton.setAttribute("aria-pressed", String(!isLeaflet));
+            scheduleActiveMapResize();
+        }
+
+        async function initializeCesiumView() {
+            showStatusMessage("Initializing 3D view...");
+
+            if (typeof Cesium === "undefined") {
+                throw new Error("CesiumJS did not load.");
+            }
+
+            const baseLayer = new Cesium.ImageryLayer(
+                new Cesium.OpenStreetMapImageryProvider({
+                    url: "https://tile.openstreetmap.org/",
+                    credit: "© OpenStreetMap contributors"
+                })
+            );
+
+            const viewer = new Cesium.Viewer("cesium-map-container", {
+                animation: false,
+                timeline: false,
+                geocoder: false,
+                homeButton: false,
+                sceneModePicker: false,
+                navigationHelpButton: false,
+                fullscreenButton: false,
+                baseLayerPicker: false,
+                baseLayer,
+                infoBox: false,
+                selectionIndicator: true,
+                scene3DOnly: true
+            });
+
+            viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString("#dbeafe");
+            configureCesiumCameraControls(viewer);
+            viewer.screenSpaceEventHandler.setInputAction((movement) => {
+                const pickedObject = viewer.scene.pick(movement.position);
+                const pickedEntity = Cesium.defined(pickedObject) ? pickedObject.id : null;
+
+                if (!pickedEntity?.airportAircraft) {
+                    clearCesiumAircraftSelection();
+                    return;
+                }
+
+                viewer.selectedEntity = pickedEntity;
+                showCesiumAircraftDetails(pickedEntity.airportAircraft);
+            }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+            mapViewState.cesiumViewer = viewer;
+            mapViewState.cesiumInitialized = true;
+            updateCesiumCameraAltitude();
+            updateCesiumChartOverlay();
+            updateCesiumAircraft(getVisibleAircraft());
+
+            if (state.currentAirport) {
+                showStatusMessage("3D aircraft view ready.", "success");
+            } else {
+                showStatusMessage("Select an airport to center the 3D view.");
+            }
+        }
+
+        // Measured from a top-down view: 0° looks straight down, 90° is
+        // horizontal, and 180° looks straight up. Staying slightly away from
+        // both poles avoids Cesium's heading/roll singularities.
+        const CESIUM_MIN_TILT_ANGLE = Cesium.Math.toRadians(3);
+        const CESIUM_MAX_TILT_ANGLE = Cesium.Math.toRadians(179);
+        const CESIUM_CAMERA_ANGLE_EPSILON = Cesium.Math.toRadians(0.01);
+
+        function focusCesiumOnCurrentAirport() {
+            if (!mapViewState.cesiumInitialized || !state.currentAirport) {
+                if (mapViewState.activeView === "cesium") {
+                    showStatusMessage("Select an airport to center the 3D view.");
+                }
+                return;
+            }
+
+            const latitude = Number(state.currentAirport.center_lat);
+            const longitude = Number(state.currentAirport.center_lon);
+
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                showStatusMessage("Unable to center the 3D view on this airport.", "error");
+                return;
+            }
+
+            mapViewState.cesiumViewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(longitude, latitude, 12000),
+                orientation: {
+                    heading: Cesium.Math.toRadians(0),
+                    pitch: Cesium.Math.toRadians(-45),
+                    roll: 0
+                }
+            });
+            mapViewState.cesiumFocusedAirport = getCurrentAirportCenterKey();
+            updateCesiumCameraAltitude();
+        }
+
+        function resetCesiumCameraView() {
+            if (mapViewState.activeView !== "cesium" || !mapViewState.cesiumInitialized) {
+                return;
+            }
+
+            if (!state.currentAirport) {
+                showStatusMessage("Select an airport before resetting the 3D view.");
+                return;
+            }
+
+            const latitude = Number(state.currentAirport.center_lat);
+            const longitude = Number(state.currentAirport.center_lon);
+
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                showStatusMessage("Unable to reset the 3D view for this airport.", "error");
+                return;
+            }
+
+            // Reset to a predictable north-up plan view above the selected airport.
+            mapViewState.cesiumViewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(longitude, latitude, 12000),
+                orientation: {
+                    heading: 0,
+                    // 3° is visually top-down without reaching the 0°
+                    // singularity where heading can become unstable.
+                    pitch: CESIUM_MIN_TILT_ANGLE - Cesium.Math.PI_OVER_TWO,
+                    roll: 0
+                }
+            });
+            mapViewState.cesiumFocusedAirport = getCurrentAirportCenterKey();
+            updateCesiumCameraAltitude();
+            mapViewState.cesiumViewer.scene.requestRender();
+            showStatusMessage("3D view reset to top-down.", "success");
+        }
+
+        function handleCesiumResetShortcut(event) {
+            const target = event.target;
+            const isTyping = target instanceof HTMLInputElement ||
+                target instanceof HTMLSelectElement ||
+                target instanceof HTMLTextAreaElement ||
+                target?.isContentEditable;
+
+            if (
+                isTyping ||
+                mapViewState.activeView !== "cesium" ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.altKey ||
+                event.key.toLowerCase() !== "r"
+            ) {
+                return;
+            }
+
+            event.preventDefault();
+            resetCesiumCameraView();
+        }
+
+        function configureCesiumCameraControls(viewer) {
+            const controller = viewer.scene.screenSpaceCameraController;
+
+            // Use explicit bindings so looking around does not depend on a
+            // browser or operating system's interpretation of modified drags.
+            controller.enableInputs = true;
+            controller.enableLook = true;
+            controller.enableRotate = true;
+            controller.enableTilt = true;
+            controller.enableTranslate = true;
+            controller.enableZoom = true;
+            // Avoid residual movement after the user requests an exact reset.
+            controller.inertiaSpin = 0;
+            controller.inertiaTranslate = 0;
+            controller.inertiaZoom = 0;
+            // Cap the amount processed in one animation frame. This prevents
+            // long pointer deltas or a dropped frame from launching the camera
+            // across the globe, especially near a horizontal view.
+            controller.maximumMovementRatio = 0.015;
+            controller.maximumTiltAngle = CESIUM_MAX_TILT_ANGLE;
+            controller.zoomFactor = 2;
+            // Plain drag now moves/orbits the map. Free-look is intentionally
+            // the modified action so desktop controls match familiar 3D maps.
+            controller.rotateEventTypes = Cesium.CameraEventType.LEFT_DRAG;
+            controller.lookEventTypes = {
+                eventType: Cesium.CameraEventType.LEFT_DRAG,
+                modifier: Cesium.KeyboardEventModifier.SHIFT
+            };
+            controller.tiltEventTypes = [
+                Cesium.CameraEventType.MIDDLE_DRAG,
+                // On touch screens Cesium interprets a two-finger gesture as
+                // pinch/tilt/twist, similar to Google Maps.
+                Cesium.CameraEventType.PINCH,
+                {
+                    eventType: Cesium.CameraEventType.LEFT_DRAG,
+                    modifier: Cesium.KeyboardEventModifier.CTRL
+                }
+            ];
+            controller.zoomEventTypes = [
+                Cesium.CameraEventType.RIGHT_DRAG,
+                Cesium.CameraEventType.WHEEL,
+                Cesium.CameraEventType.PINCH
+            ];
+
+            // Cesium's camera changed event defaults to a 50% threshold. A
+            // smaller threshold keeps the altitude display responsive without
+            // rewriting the DOM on every animation frame.
+            viewer.camera.percentageChanged = 0.005;
+            viewer.camera.changed.addEventListener(updateCesiumCameraAltitude);
+            viewer.scene.preRender.addEventListener(() => constrainCesiumCameraOrientation(viewer));
+            addCesiumTiltBoundaryGuard(viewer);
+
+            addMacTrackpadPinchSupport(viewer);
+        }
+
+        function addCesiumTiltBoundaryGuard(viewer) {
+            const canvas = viewer.scene.canvas;
+            const controller = viewer.scene.screenSpaceCameraController;
+            const minimumPitch = CESIUM_MIN_TILT_ANGLE - Cesium.Math.PI_OVER_TWO;
+            const maximumPitch = CESIUM_MAX_TILT_ANGLE - Cesium.Math.PI_OVER_TWO;
+            let activePointerId = null;
+            let previousPointerY = null;
+
+            // Cesium's native tilt can still move its orbit point after the
+            // pitch reaches a limit. Disable only movement that pushes farther
+            // through a boundary, while allowing the reverse drag immediately.
+            canvas.addEventListener("pointerdown", (event) => {
+                if (!event.ctrlKey && event.button !== 1) {
+                    return;
+                }
+
+                activePointerId = event.pointerId;
+                previousPointerY = event.clientY;
+            }, { capture: true });
+
+            canvas.addEventListener("pointermove", (event) => {
+                if (event.pointerId !== activePointerId || previousPointerY === null) {
+                    return;
+                }
+
+                const movementY = event.clientY - previousPointerY;
+                const pitch = viewer.camera.pitch;
+                const atMinimum = pitch <= minimumPitch + CESIUM_CAMERA_ANGLE_EPSILON;
+                const atMaximum = pitch >= maximumPitch - CESIUM_CAMERA_ANGLE_EPSILON;
+                const pushesPastMinimum = atMinimum && movementY > 0;
+                const pushesPastMaximum = atMaximum && movementY < 0;
+
+                controller.enableTilt = !pushesPastMinimum && !pushesPastMaximum;
+                previousPointerY = event.clientY;
+            }, { capture: true });
+
+            const finishTiltGesture = (event) => {
+                if (event.pointerId !== activePointerId) {
+                    return;
+                }
+
+                activePointerId = null;
+                previousPointerY = null;
+                constrainCesiumCameraOrientation(viewer, true);
+
+                // Keep the rejected final movement disabled through Cesium's
+                // current input frame, then restore tilt for the next gesture.
+                window.requestAnimationFrame(() => {
+                    controller.enableTilt = true;
+                });
+            };
+
+            canvas.addEventListener("pointerup", finishTiltGesture, { capture: true });
+            canvas.addEventListener("pointercancel", finishTiltGesture, { capture: true });
+        }
+
+        function constrainCesiumCameraOrientation(viewer, levelRoll = false) {
+            const camera = viewer.camera;
+            const minimumPitch = CESIUM_MIN_TILT_ANGLE - Cesium.Math.PI_OVER_TWO;
+            const maximumPitch = CESIUM_MAX_TILT_ANGLE - Cesium.Math.PI_OVER_TWO;
+            const clampedPitch = Cesium.Math.clamp(camera.pitch, minimumPitch, maximumPitch);
+            const normalizedRoll = Cesium.Math.negativePiToPi(camera.roll);
+            const hasPitchCorrection = clampedPitch !== camera.pitch;
+            const hasRollCorrection =
+                levelRoll && Math.abs(normalizedRoll) > CESIUM_CAMERA_ANGLE_EPSILON;
+
+            if (!hasPitchCorrection && !hasRollCorrection) {
+                return;
+            }
+
+            // Cesium may introduce roll while orbiting close to the horizon.
+            // Level it once when a gesture ends instead of on every frame, so
+            // the next drag starts in a predictable local reference frame.
+            camera.setView({
+                orientation: {
+                    heading: camera.heading,
+                    pitch: clampedPitch,
+                    roll: (levelRoll || hasPitchCorrection) ? 0 : camera.roll
+                }
+            });
+        }
+
+        function addMacTrackpadPinchSupport(viewer) {
+            const canvas = viewer.scene.canvas;
+            let previousGestureScale = 1;
+
+            // Chromium represents a macOS trackpad pinch as a Ctrl+wheel
+            // gesture. Handle only that variant and leave ordinary wheel input
+            // to Cesium's normal zoom controller.
+            canvas.addEventListener("wheel", (event) => {
+                if (!event.ctrlKey) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const scaleRatio = Math.exp(-event.deltaY * 0.01);
+                zoomCesiumCameraByScale(viewer, scaleRatio);
+            }, { capture: true, passive: false });
+
+            // Safari on a Mac exposes trackpad pinch through gesture events.
+            // Touch-capable devices stay on Cesium's native PINCH path to avoid
+            // processing the same two-finger gesture twice.
+            if (navigator.maxTouchPoints === 0) {
+                canvas.addEventListener("gesturestart", (event) => {
+                    previousGestureScale = 1;
+                    event.preventDefault();
+                }, { passive: false });
+
+                canvas.addEventListener("gesturechange", (event) => {
+                    event.preventDefault();
+                    const currentScale = Number(event.scale) || 1;
+                    zoomCesiumCameraByScale(viewer, currentScale / previousGestureScale);
+                    previousGestureScale = currentScale;
+                }, { passive: false });
+
+                canvas.addEventListener("gestureend", () => {
+                    previousGestureScale = 1;
+                });
+            }
+        }
+
+        function zoomCesiumCameraByScale(viewer, scaleRatio) {
+            if (!Number.isFinite(scaleRatio) || scaleRatio <= 0 || scaleRatio === 1) {
+                return;
+            }
+
+            const cameraHeight = Math.max(viewer.camera.positionCartographic.height, 10);
+            const zoomFraction = Math.min(Math.abs(Math.log(scaleRatio)), 0.35);
+            const zoomAmount = cameraHeight * zoomFraction;
+
+            if (scaleRatio > 1) {
+                viewer.camera.zoomIn(zoomAmount);
+            } else {
+                viewer.camera.zoomOut(zoomAmount);
+            }
+
+            updateCesiumCameraAltitude();
+            viewer.scene.requestRender();
+        }
+
+        function updateCesiumCameraAltitude() {
+            if (!mapViewState.cesiumViewer) {
+                return;
+            }
+
+            // Cesium reports camera height in metres above the WGS84 ellipsoid.
+            // Showing feet alongside it makes the readout useful for aviation.
+            const altitudeMeters = Math.max(
+                0,
+                mapViewState.cesiumViewer.camera.positionCartographic.height
+            );
+            const altitudeFeet = altitudeMeters / 0.3048;
+            const metricAltitude = altitudeMeters >= 1000
+                ? `${(altitudeMeters / 1000).toFixed(1)} km`
+                : `${Math.round(altitudeMeters).toLocaleString()} m`;
+
+            elements.cesiumCameraAltitude.textContent =
+                `${metricAltitude} (${Math.round(altitudeFeet).toLocaleString()} ft)`;
+        }
+
+        function getCurrentAirportCenterKey() {
+            if (!state.currentAirport) {
+                return null;
+            }
+
+            return `${state.currentAirport.center_lat},${state.currentAirport.center_lon}`;
+        }
+
         function toggleAdvancedControls() {
             const isCollapsed = elements.advancedControls.classList.toggle("is-collapsed");
             const isExpanded = !isCollapsed;
@@ -440,6 +1346,17 @@
             elements.toggleControlsButton.textContent = isExpanded ? "▲" : "▼";
             elements.toggleControlsButton.title = isExpanded ? "Hide controls" : "Show controls";
             elements.toggleControlsButton.setAttribute("aria-expanded", String(isExpanded));
+        }
+
+        function toggleChartList() {
+            setChartListExpanded(!state.chartsExpanded);
+        }
+
+        function setChartListExpanded(isExpanded) {
+            state.chartsExpanded = isExpanded;
+            elements.chartList.classList.toggle("is-collapsed", !isExpanded);
+            elements.chartListToggle.setAttribute("aria-expanded", String(isExpanded));
+            elements.chartListChevron.textContent = isExpanded ? "▲" : "▼";
         }
 
         function getSelectedIcao() {
@@ -467,10 +1384,45 @@
             elements.statusPanel.className = `status-panel status-${type}`;
         }
 
-        function setAirportLoading(isLoading) {
-            state.isAirportLoading = isLoading;
-            elements.loadAirportButton.disabled = isLoading;
-            elements.loadAirportButton.textContent = isLoading ? "Loading..." : "Load Airport";
+        function getExtractionMethodLabel(method) {
+            if (method === "text") {
+                return "Text extraction";
+            }
+
+            if (method === "glyph") {
+                return "Glyph extraction";
+            }
+
+            return "Unknown extraction method";
+        }
+
+        function showDebugExtractionMethod() {
+            if (!state.debuggingEnabled || !state.currentAirport) {
+                return;
+            }
+
+            if (!state.currentAirport.extraction_method) {
+                showStatusMessage("Text/glyph extraction metadata is not available for this chart.");
+                return;
+            }
+
+            showStatusMessage(
+                getExtractionMethodLabel(state.currentAirport.extraction_method)
+            );
+        }
+
+        function setChartsLoading(isLoading) {
+            state.isChartsLoading = isLoading;
+            elements.loadAirportButton.disabled = isLoading || state.isChartLoading;
+            elements.loadAirportButton.textContent = isLoading ? "Finding..." : "Find Charts";
+            renderChartList();
+        }
+
+        function setChartLoading(isLoading, chartId = null) {
+            state.isChartLoading = isLoading;
+            state.loadingChartId = isLoading ? chartId : null;
+            elements.loadAirportButton.disabled = isLoading || state.isChartsLoading;
+            renderChartList();
         }
 
         function updateStatusIndicators() {
@@ -508,7 +1460,8 @@
 
         function loadAirportCode(icao) {
             elements.icaoInput.value = icao;
-            loadAirport();
+            setDashboardCollapsed(false);
+            loadAvailableCharts();
         }
 
         function isCurrentAirport(nearestAirport) {
@@ -589,7 +1542,7 @@
 
             const button = document.createElement("button");
             button.type = "button";
-            button.textContent = "Load Airport";
+            button.textContent = "View Charts";
             button.addEventListener("click", () => {
                 map.closePopup();
                 loadAirportCode(airport.icao);
@@ -603,8 +1556,8 @@
         }
 
         /*
-            A map click only looks up the nearest airport code. Loading still
-            goes through the same input-driven /airport/load pipeline.
+            A map click only looks up the nearest airport code. Chart discovery
+            then goes through the same input-driven loadAvailableCharts flow.
         */
         async function findAirportFromMapClick(event) {
             if (shouldIgnoreMapClick(event)) {
@@ -697,15 +1650,73 @@
             `;
         }
 
-        /*
-            Load airport metadata from FastAPI.
+        function getChartTypeLabel(chart) {
+            return chart.type === "airport_diagram" ? "Airport diagram" : "Approach chart";
+        }
 
-            Backend returns:
-            - center_lat / center_lon for ADS-B queries
-            - diagram_url for the PNG airport diagram
-            - corners_url for rotated Leaflet placement
-        */
-        async function loadAirport() {
+        function setChartListMessage(message, type = "info") {
+            elements.chartList.replaceChildren();
+
+            const messageElement = document.createElement("div");
+            messageElement.className = `chart-list-message status-${type}`;
+            messageElement.textContent = message;
+            elements.chartList.appendChild(messageElement);
+        }
+
+        function renderChartList() {
+            if (state.isChartsLoading) {
+                setChartListMessage(`Looking up charts for ${getSelectedIcao()}...`);
+                return;
+            }
+
+            if (!state.availableCharts.length) {
+                setChartListMessage(state.chartListMessage);
+                return;
+            }
+
+            elements.chartList.replaceChildren();
+
+            state.availableCharts.forEach(chart => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "chart-item-btn";
+                button.disabled = state.isChartLoading;
+
+                if (state.loadingChartId === chart.id) {
+                    button.classList.add("is-loading");
+                }
+
+                if (
+                    state.currentAirport?.icao === state.availableChartsIcao &&
+                    state.currentAirport.chart_id === chart.id
+                ) {
+                    button.classList.add("is-current");
+                    button.setAttribute("aria-current", "true");
+                }
+
+                const name = document.createElement("span");
+                name.className = "chart-item-name";
+                name.textContent = state.loadingChartId === chart.id
+                    ? `Loading ${chart.name}...`
+                    : chart.name;
+                button.appendChild(name);
+
+                const meta = document.createElement("span");
+                meta.className = "chart-item-meta";
+                meta.textContent = getChartTypeLabel(chart);
+                button.appendChild(meta);
+
+                // Each chart button feeds the existing /chart/load pipeline.
+                button.addEventListener("click", () => loadSelectedChart(chart.id));
+                elements.chartList.appendChild(button);
+            });
+        }
+
+        async function loadAvailableCharts() {
+            if (state.isChartsLoading || state.isChartLoading) {
+                return;
+            }
+
             const icao = getSelectedIcao();
 
             if (!icao) {
@@ -713,34 +1724,106 @@
                 return;
             }
 
-            setAirportLoading(true);
-            showStatusMessage("Loading airport...");
+            setDashboardCollapsed(false);
+            setChartListExpanded(true);
+            state.availableCharts = [];
+            state.availableChartsIcao = null;
+            state.chartListMessage = `Looking up charts for ${icao}...`;
+            setChartsLoading(true);
+            showStatusMessage(`Looking up charts for ${icao}...`);
             updateStatusIndicators();
 
             try {
-                const response = await fetch("/airport/load", {
+                const response = await fetch(`/airport/charts?icao=${encodeURIComponent(icao)}`);
+
+                if (!response.ok) {
+                    const detail = await readErrorDetail(response);
+                    throw new Error(detail || `No charts found for ${icao}.`);
+                }
+
+                const result = await response.json();
+
+                if (getSelectedIcao() !== result.icao) {
+                    return;
+                }
+
+                state.availableCharts = Array.isArray(result.charts) ? result.charts : [];
+                state.availableChartsIcao = result.icao;
+                state.chartListMessage = state.availableCharts.length
+                    ? "Choose a chart to load."
+                    : `No supported FAA charts found for ${result.icao}.`;
+                renderChartList();
+                showStatusMessage(
+                    `Found ${state.availableCharts.length} charts for ${result.icao}. Choose a chart.`,
+                    "success"
+                );
+            } catch (error) {
+                console.error("Chart lookup error:", error);
+                state.chartListMessage = error.message;
+                renderChartList();
+                showStatusMessage(error.message, "error");
+            } finally {
+                setChartsLoading(false);
+                updateStatusIndicators();
+            }
+        }
+
+        async function loadSelectedChart(chartId) {
+            const icao = state.availableChartsIcao;
+            const selectedChart = state.availableCharts.find(chart => chart.id === chartId);
+            const airportChanged = state.currentAirport?.icao !== icao;
+
+            if (state.isChartsLoading || state.isChartLoading) {
+                return;
+            }
+
+            if (!icao || getSelectedIcao() !== icao || !selectedChart) {
+                showStatusMessage("Select a chart to load.", "error");
+                return;
+            }
+
+            setChartLoading(true, chartId);
+            showStatusMessage(`Loading ${selectedChart.name}...`);
+
+            try {
+                const response = await fetch("/chart/load", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ icao })
+                    body: JSON.stringify({ icao, chart_id: chartId })
                 });
 
                 if (!response.ok) {
                     const detail = await readErrorDetail(response);
-                    throw new Error(detail || `Unable to georeference ${icao}.`);
+                    throw new Error(detail || `Unable to load ${selectedChart.name}.`);
                 }
 
-                const airport = await response.json();
+                const chart = await response.json();
 
-                state.currentAirport = airport;
+                // The old overlay and traffic remain intact until these assets load.
+                await loadChartOverlay(chart.diagram_url, chart.corners_url);
+
+                if (airportChanged) {
+                    const clearResponse = await fetch("/aircraft/tracks/clear", { method: "POST" });
+
+                    if (!clearResponse.ok) {
+                        throw new Error("Unable to clear aircraft path history.");
+                    }
+                }
+
+                state.currentAirport = chart;
                 state.aircraft = [];
                 state.expandedAircraft.clear();
                 state.lastAircraftRefresh = null;
 
-                map.setView([airport.center_lat, airport.center_lon], DEFAULT_ZOOM);
+                if (
+                    mapViewState.activeView === "cesium" &&
+                    getCurrentAirportCenterKey() !== mapViewState.cesiumFocusedAirport
+                ) {
+                    focusCesiumOnCurrentAirport();
+                }
 
-                await loadAirportDiagram(airport.diagram_url, airport.corners_url);
-
-                showStatusMessage(`Loaded ${airport.icao}.`, "success");
+                showStatusMessage(`Loaded ${chart.chart_name}.`, "success");
+                showDebugExtractionMethod();
 
                 if (state.liveTrafficEnabled) {
                     await loadAircraft();
@@ -749,12 +1832,11 @@
                     stopAircraftPolling();
                     renderAircraft();
                 }
-
             } catch (error) {
-                console.error("Airport load error:", error);
+                console.error("Chart load error:", error);
                 showStatusMessage(error.message, "error");
             } finally {
-                setAirportLoading(false);
+                setChartLoading(false);
                 updateStatusIndicators();
             }
         }
@@ -767,25 +1849,25 @@
             - diagram.png
             - corners.json with topLeft, topRight, bottomLeft coordinates
         */
-        async function loadAirportDiagram(diagramUrl, cornersUrl) {
-            if (state.airportOverlay) {
-                map.removeLayer(state.airportOverlay);
-                state.airportOverlay = null;
-            }
-
+        async function loadChartOverlay(diagramUrl, cornersUrl) {
             const response = await fetch(cornersUrl);
 
             if (!response.ok) {
-                throw new Error(`Failed to load airport corners: ${response.status}`);
+                throw new Error(`Failed to load chart corners: ${response.status}`);
             }
 
             const corners = await response.json();
+
+            // Keep the same prepared chart image and corner metadata available
+            // to both renderers. Cesium is still initialized only on demand.
+            mapViewState.cesiumChartOverlayData = { diagramUrl, corners };
+            updateCesiumChartOverlay();
 
             const topLeft = L.latLng(corners.topLeft[0], corners.topLeft[1]);
             const topRight = L.latLng(corners.topRight[0], corners.topRight[1]);
             const bottomLeft = L.latLng(corners.bottomLeft[0], corners.bottomLeft[1]);
 
-            state.airportOverlay = L.imageOverlay.rotated(
+            const nextOverlay = L.imageOverlay.rotated(
                 diagramUrl,
                 topLeft,
                 topRight,
@@ -796,23 +1878,121 @@
                 }
             );
 
-            updateAirportOverlayVisibility();
+            if (state.isDiagramVisible) {
+                nextOverlay.addTo(map);
+            }
+
+            const previousOverlay = state.airportOverlay;
+            state.airportOverlay = nextOverlay;
+
+            if (previousOverlay && map.hasLayer(previousOverlay)) {
+                map.removeLayer(previousOverlay);
+            }
 
             map.fitBounds([topLeft, topRight, bottomLeft]);
         }
 
         function updateAirportOverlayVisibility() {
-            if (!state.airportOverlay) {
+            if (state.airportOverlay) {
+                const hasOverlay = map.hasLayer(state.airportOverlay);
+
+                if (state.isDiagramVisible && !hasOverlay) {
+                    state.airportOverlay.addTo(map);
+                } else if (!state.isDiagramVisible && hasOverlay) {
+                    map.removeLayer(state.airportOverlay);
+                }
+            }
+
+            if (mapViewState.cesiumChartEntity) {
+                mapViewState.cesiumChartEntity.show = state.isDiagramVisible;
+                mapViewState.cesiumViewer.scene.requestRender();
+            }
+        }
+
+        function updateCesiumChartOverlay() {
+            if (!mapViewState.cesiumInitialized || !mapViewState.cesiumChartOverlayData) {
                 return;
             }
 
-            const hasOverlay = map.hasLayer(state.airportOverlay);
+            const { diagramUrl, corners } = mapViewState.cesiumChartOverlayData;
+            const topLeft = getValidChartCorner(corners.topLeft);
+            const topRight = getValidChartCorner(corners.topRight);
+            const bottomLeft = getValidChartCorner(corners.bottomLeft);
 
-            if (state.isDiagramVisible && !hasOverlay) {
-                state.airportOverlay.addTo(map);
-            } else if (!state.isDiagramVisible && hasOverlay) {
-                map.removeLayer(state.airportOverlay);
+            if (!topLeft || !topRight || !bottomLeft) {
+                console.warn("Skipping invalid Cesium chart corners.", corners);
+                return;
             }
+
+            // The existing Leaflet rotated overlay receives three affine
+            // corners. Reconstruct the fourth with the same parallelogram rule.
+            const bottomRight = [
+                topRight[0] + bottomLeft[0] - topLeft[0],
+                topRight[1] + bottomLeft[1] - topLeft[1]
+            ];
+            const positions = Cesium.Cartesian3.fromDegreesArray([
+                topLeft[1], topLeft[0],
+                bottomLeft[1], bottomLeft[0],
+                bottomRight[1], bottomRight[0],
+                topRight[1], topRight[0]
+            ]);
+
+            // Explicit texture coordinates preserve the chart's rotation and
+            // orientation instead of forcing it into an axis-aligned rectangle.
+            // The polygon and UV rings are counter-clockwise to prevent Cesium
+            // from reversing the polygon winding and mirroring the chart.
+            const textureCoordinates = new Cesium.PolygonHierarchy([
+                new Cesium.Cartesian2(0, 1),
+                new Cesium.Cartesian2(0, 0),
+                new Cesium.Cartesian2(1, 0),
+                new Cesium.Cartesian2(1, 1)
+            ]);
+
+            if (mapViewState.cesiumChartEntity) {
+                mapViewState.cesiumViewer.entities.remove(mapViewState.cesiumChartEntity);
+            }
+
+            mapViewState.cesiumChartEntity = mapViewState.cesiumViewer.entities.add({
+                id: "cesium-loaded-chart-overlay",
+                name: "Loaded chart overlay",
+                show: state.isDiagramVisible,
+                polygon: {
+                    hierarchy: new Cesium.PolygonHierarchy(positions),
+                    textureCoordinates,
+                    height: 0.5,
+                    heightReference: Cesium.HeightReference.NONE,
+                    arcType: Cesium.ArcType.RHUMB,
+                    material: new Cesium.ImageMaterialProperty({
+                        image: diagramUrl,
+                        color: Cesium.Color.WHITE.withAlpha(getSelectedOpacity()),
+                        transparent: true
+                    })
+                }
+            });
+            mapViewState.cesiumViewer.scene.requestRender();
+        }
+
+        function getValidChartCorner(corner) {
+            if (!Array.isArray(corner) || corner.length < 2) {
+                return null;
+            }
+
+            const latitude = Number(corner[0]);
+            const longitude = Number(corner[1]);
+            return Number.isFinite(latitude) && Number.isFinite(longitude)
+                ? [latitude, longitude]
+                : null;
+        }
+
+        function updateCesiumChartAppearance() {
+            const material = mapViewState.cesiumChartEntity?.polygon?.material;
+
+            if (!material) {
+                return;
+            }
+
+            material.color = Cesium.Color.WHITE.withAlpha(getSelectedOpacity());
+            mapViewState.cesiumViewer.scene.requestRender();
         }
 
         /*
@@ -879,8 +2059,328 @@
 
         function renderAircraft() {
             clearAircraftMarkers();
-            getVisibleAircraft().forEach(addAircraftMarker);
+            const visibleAircraft = getVisibleAircraft();
+            visibleAircraft.forEach(addAircraftMarker);
+            updateLeafletAircraftPaths(visibleAircraft);
+            updateCesiumAircraft(visibleAircraft);
             updateStatusIndicators();
+        }
+
+        function getValidLeafletPathPoints(aircraft) {
+            if (!Array.isArray(aircraft.path)) {
+                return [];
+            }
+
+            return aircraft.path.flatMap(point => {
+                const latitude = Number(point?.lat);
+                const longitude = Number(point?.lon);
+
+                if (
+                    !Number.isFinite(latitude)
+                    || !Number.isFinite(longitude)
+                    || latitude < -90
+                    || latitude > 90
+                    || longitude < -180
+                    || longitude > 180
+                ) {
+                    return [];
+                }
+
+                return [[latitude, longitude]];
+            });
+        }
+
+        function updateLeafletAircraftPaths(aircraftList) {
+            const activeAircraftIds = new Set();
+
+            if (state.showAircraftPaths) {
+                for (const aircraft of aircraftList) {
+                    const aircraftId = String(aircraft.hex || "").trim();
+                    const latLngs = getValidLeafletPathPoints(aircraft);
+
+                    if (!aircraftId || latLngs.length < 2) {
+                        continue;
+                    }
+
+                    activeAircraftIds.add(aircraftId);
+                    let polyline = leafletAircraftPaths.get(aircraftId);
+
+                    if (polyline) {
+                        polyline.setLatLngs(latLngs);
+                    } else {
+                        polyline = L.polyline(latLngs, {
+                            color: getAircraftColor(aircraft),
+                            opacity: 0.75,
+                            weight: 2
+                        }).addTo(map);
+                        leafletAircraftPaths.set(aircraftId, polyline);
+                    }
+                }
+            }
+
+            for (const [aircraftId, polyline] of leafletAircraftPaths) {
+                if (activeAircraftIds.has(aircraftId)) {
+                    continue;
+                }
+
+                map.removeLayer(polyline);
+                leafletAircraftPaths.delete(aircraftId);
+            }
+        }
+
+        function getAircraftAltitudeFeet(aircraft) {
+            if (String(aircraft.altitude ?? "").toLowerCase() === "ground") {
+                return 0;
+            }
+
+            const altitudeFeet = Number(aircraft.altitude);
+            return Number.isFinite(altitudeFeet) ? altitudeFeet : 0;
+        }
+
+        function createCesiumPosition(aircraft) {
+            const longitude = Number(aircraft.lon);
+            const latitude = Number(aircraft.lat);
+            const altitudeMeters = getAircraftAltitudeFeet(aircraft) * 0.3048;
+            return Cesium.Cartesian3.fromDegrees(longitude, latitude, altitudeMeters);
+        }
+
+        function escapeHtml(value) {
+            const element = document.createElement("div");
+            element.textContent = String(value);
+            return element.innerHTML;
+        }
+
+        function createCesiumDescription(aircraft) {
+            const callsign = aircraft.callsign || aircraft.hex;
+            const altitude = String(aircraft.altitude ?? "Unknown").toLowerCase() === "ground"
+                ? "Ground"
+                : `${getAircraftAltitudeFeet(aircraft)} ft`;
+
+            return `
+                <strong>${escapeHtml(callsign)}</strong><br>
+                Altitude: ${escapeHtml(altitude)}<br>
+                Ground speed: ${escapeHtml(aircraft.ground_speed ?? "Unknown")}<br>
+                Track: ${escapeHtml(aircraft.track ?? "Unknown")}<br>
+                Status: ${escapeHtml(aircraft.status || "Unknown")}
+            `;
+        }
+
+        function createCesiumAircraftEntity(aircraft, aircraftId, position) {
+            const entity = mapViewState.cesiumViewer.entities.add({
+                id: `aircraft-${aircraftId}`,
+                name: aircraft.callsign || aircraft.hex,
+                position,
+                point: {
+                    color: Cesium.Color.fromCssColorString(getAircraftColor(aircraft)),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 1,
+                    pixelSize: 9,
+                    heightReference: Cesium.HeightReference.NONE
+                },
+                label: {
+                    text: aircraft.callsign || aircraft.hex,
+                    font: "13px Arial, sans-serif",
+                    fillColor: Cesium.Color.WHITE,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 2,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -18),
+                    showBackground: true,
+                    backgroundColor: Cesium.Color.BLACK.withAlpha(0.65),
+                    disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM
+                },
+                description: createCesiumDescription(aircraft)
+            });
+
+            entity.airportAircraft = aircraft;
+            mapViewState.cesiumAircraftEntities.set(aircraftId, entity);
+            return entity;
+        }
+
+        function updateCesiumAircraftMetadata(entity, aircraft) {
+            const callsign = aircraft.callsign || aircraft.hex;
+            entity.name = callsign;
+            entity.label.text = callsign;
+            entity.point.color = Cesium.Color.fromCssColorString(getAircraftColor(aircraft));
+            entity.description = createCesiumDescription(aircraft);
+            entity.airportAircraft = aircraft;
+
+            if (mapViewState.cesiumViewer.selectedEntity === entity) {
+                showCesiumAircraftDetails(aircraft);
+            }
+        }
+
+        function showCesiumAircraftDetails(aircraft) {
+            const callsign = aircraft.callsign || aircraft.hex || "Unknown aircraft";
+            const altitude = String(aircraft.altitude ?? "Unknown").toLowerCase() === "ground"
+                ? "Ground"
+                : `${getAircraftAltitudeFeet(aircraft)} ft`;
+
+            elements.cesiumAircraftDetailsTitle.textContent = callsign;
+            elements.cesiumAircraftDetailsContent.textContent = [
+                `Altitude: ${altitude}`,
+                `Ground speed: ${aircraft.ground_speed ?? "Unknown"}`,
+                `Track: ${aircraft.track ?? "Unknown"}`,
+                `Vertical speed: ${aircraft.vertical_rate ?? "Unknown"}`,
+                `Type: ${aircraft.aircraft_type || "Unknown"}`,
+                `Status: ${aircraft.status || "Unknown"}`
+            ].join("\n");
+            elements.cesiumAircraftDetails.hidden = false;
+        }
+
+        function hideCesiumAircraftDetails() {
+            elements.cesiumAircraftDetails.hidden = true;
+        }
+
+        function clearCesiumAircraftSelection() {
+            if (mapViewState.cesiumViewer) {
+                mapViewState.cesiumViewer.selectedEntity = undefined;
+            }
+
+            hideCesiumAircraftDetails();
+        }
+
+        function updateCesiumAircraft(aircraftList) {
+            if (!mapViewState.cesiumInitialized) {
+                return;
+            }
+
+            const activeAircraftIds = new Set();
+
+            for (const aircraft of aircraftList) {
+                const latitude = Number(aircraft.lat);
+                const longitude = Number(aircraft.lon);
+                const aircraftId = String(aircraft.hex || "").trim();
+
+                if (!aircraftId || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                    continue;
+                }
+
+                activeAircraftIds.add(aircraftId);
+
+                try {
+                    const position = createCesiumPosition(aircraft);
+                    let entity = mapViewState.cesiumAircraftEntities.get(aircraftId);
+
+                    if (!entity) {
+                        entity = createCesiumAircraftEntity(aircraft, aircraftId, position);
+                    } else {
+                        entity.position = position;
+                        updateCesiumAircraftMetadata(entity, aircraft);
+                    }
+                } catch (error) {
+                    console.warn(`Skipping invalid aircraft ${aircraftId}:`, error);
+                    activeAircraftIds.delete(aircraftId);
+                }
+            }
+
+            removeStaleCesiumAircraft(activeAircraftIds);
+            updateCesiumAircraftPaths(aircraftList, activeAircraftIds);
+            mapViewState.cesiumViewer.scene.requestRender();
+        }
+
+        function getValidCesiumPathPositions(aircraft) {
+            if (!Array.isArray(aircraft.path)) {
+                return [];
+            }
+
+            return aircraft.path.flatMap(point => {
+                const latitude = Number(point?.lat);
+                const longitude = Number(point?.lon);
+                const altitudeFeet = Number(point?.alt_baro);
+
+                if (
+                    !Number.isFinite(latitude)
+                    || !Number.isFinite(longitude)
+                    || !Number.isFinite(altitudeFeet)
+                    || latitude < -90
+                    || latitude > 90
+                    || longitude < -180
+                    || longitude > 180
+                ) {
+                    return [];
+                }
+
+                return [
+                    Cesium.Cartesian3.fromDegrees(
+                        longitude,
+                        latitude,
+                        altitudeFeet * 0.3048
+                    )
+                ];
+            });
+        }
+
+        function updateCesiumAircraftPaths(aircraftList, activeAircraftIds) {
+            const activePathIds = new Set();
+
+            if (state.showAircraftPaths) {
+                for (const aircraft of aircraftList) {
+                    const aircraftId = String(aircraft.hex || "").trim();
+
+                    if (!aircraftId || !activeAircraftIds.has(aircraftId)) {
+                        continue;
+                    }
+
+                    try {
+                        const positions = getValidCesiumPathPositions(aircraft);
+
+                        if (positions.length < 2) {
+                            continue;
+                        }
+
+                        activePathIds.add(aircraftId);
+                        let entity = mapViewState.cesiumAircraftPaths.get(aircraftId);
+
+                        if (entity) {
+                            entity.polyline.positions = positions;
+                        } else {
+                            entity = mapViewState.cesiumViewer.entities.add({
+                                id: `${aircraftId}-path`,
+                                polyline: {
+                                    positions,
+                                    width: 2,
+                                    material: Cesium.Color.fromCssColorString(
+                                        getAircraftColor(aircraft)
+                                    ).withAlpha(0.75),
+                                    clampToGround: false
+                                }
+                            });
+                            mapViewState.cesiumAircraftPaths.set(aircraftId, entity);
+                        }
+                    } catch (error) {
+                        console.warn(`Skipping invalid path for ${aircraftId}:`, error);
+                    }
+                }
+            }
+
+            for (const [aircraftId, entity] of mapViewState.cesiumAircraftPaths) {
+                if (activePathIds.has(aircraftId)) {
+                    continue;
+                }
+
+                mapViewState.cesiumViewer.entities.remove(entity);
+                mapViewState.cesiumAircraftPaths.delete(aircraftId);
+            }
+        }
+
+        function removeStaleCesiumAircraft(activeAircraftIds) {
+            for (const [aircraftId, entity] of mapViewState.cesiumAircraftEntities) {
+                if (activeAircraftIds.has(aircraftId)) {
+                    continue;
+                }
+
+                const wasSelected = mapViewState.cesiumViewer.selectedEntity === entity;
+                mapViewState.cesiumViewer.entities.remove(entity);
+                mapViewState.cesiumAircraftEntities.delete(aircraftId);
+
+                if (wasSelected) {
+                    mapViewState.cesiumViewer.selectedEntity = undefined;
+                    hideCesiumAircraftDetails();
+                }
+            }
         }
 
         function clearAircraftMarkers() {
@@ -960,8 +2460,10 @@
             renderAircraft();
         }
 
+        window.addEventListener("keydown", handleCesiumResetShortcut);
+        window.addEventListener("resize", scheduleActiveMapResize);
         updateStatusIndicators();
-        loadAirport();
+        loadAvailableCharts();
     </script>
 
 </body>

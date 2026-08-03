@@ -1,5 +1,6 @@
 import os
 import re
+from pathlib import Path
 import pymupdf
 import rasterio
 import requests
@@ -15,7 +16,62 @@ TEMP_PNG_PATH = "temp_airport_diagram.png"
 
 DPI = 220
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+WEB_APP_DIR = PROJECT_ROOT / "web_app"
+AIRPORT_STUFF_DIR = WEB_APP_DIR / "airport_stuff"
+OLD_AIRPORT_PDFS_DIR = AIRPORT_STUFF_DIR / "pdfs"
+OLD_AIRPORT_GEOTIFFS_DIR = AIRPORT_STUFF_DIR / "geotiffs"
+
 MIN_CONTROL_POINTS_PER_AXIS = 2
+
+
+def normalize_airport_code(icao: str) -> str:
+    return icao.upper().strip()
+
+
+def get_airport_storage_paths(icao: str) -> tuple[Path, Path, Path]:
+    icao = normalize_airport_code(icao)
+    airport_dir = AIRPORT_STUFF_DIR / icao
+    pdf_path = airport_dir / f"{icao}_apd.pdf"
+    geotiff_path = airport_dir / f"{icao}_apd_affine.tif"
+    return airport_dir, pdf_path, geotiff_path
+
+
+def ensure_airport_stuff_dirs(icao: str | None = None) -> None:
+    if icao is None:
+        AIRPORT_STUFF_DIR.mkdir(parents=True, exist_ok=True)
+        return
+
+    airport_dir, _, _ = get_airport_storage_paths(icao)
+    airport_dir.mkdir(parents=True, exist_ok=True)
+
+
+def get_airport_pdf_path(airport_name: str) -> Path:
+    _, pdf_path, _ = get_airport_storage_paths(airport_name)
+    return pdf_path
+
+
+def get_airport_geotiff_path(airport_name: str) -> Path:
+    _, _, geotiff_path = get_airport_storage_paths(airport_name)
+    return geotiff_path
+
+
+def migrate_old_airport_file(old_path: Path, new_path: Path) -> None:
+    if new_path.exists() or not old_path.exists():
+        return
+
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.replace(new_path)
+    print(f"Migrated airport file: {old_path} -> {new_path}")
+
+
+def migrate_old_airport_storage(icao: str, pdf_path: Path, geotiff_path: Path) -> None:
+    icao = normalize_airport_code(icao)
+    migrate_old_airport_file(OLD_AIRPORT_PDFS_DIR / f"{icao}.pdf", pdf_path)
+    migrate_old_airport_file(
+        OLD_AIRPORT_GEOTIFFS_DIR / f"{icao}_affine.tif",
+        geotiff_path,
+    )
 
 
 class GeoreferencingError(RuntimeError):
@@ -86,9 +142,11 @@ def validate_geotiff(tif_path: str) -> None:
 # -----------------------------------------------------------------------------
 # FAA airport diagram download
 # -----------------------------------------------------------------------------
-def download_airport_diagram(airport_name: str, pdf_path: str) -> None:
+def download_airport_diagram(airport_name: str, pdf_path: str | Path) -> None:
+    airport_name = normalize_airport_code(airport_name)
+    pdf_path = Path(pdf_path)
 
-    if os.path.exists(pdf_path):
+    if pdf_path.exists():
         print(f"{pdf_path} already exists")
         return
 
@@ -112,7 +170,9 @@ def download_airport_diagram(airport_name: str, pdf_path: str) -> None:
         )
 
     try:
-        with open(pdf_path, "wb") as file:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with pdf_path.open("wb") as file:
             file.write(response.content)
 
     except OSError as exc:
@@ -305,13 +365,15 @@ def parse_coord(label: str) -> float:
 # GeoTIFF generation
 # -----------------------------------------------------------------------------
 def create_georeferenced_tiff(
-    pdf_path: str,
-    output_tif_path: str,
+    pdf_path: str | Path,
+    output_tif_path: str | Path,
     x_dict: dict[str, float],
     y_dict: dict[str, float],
     north_up_flag: bool,
     dpi: int = DPI,
 ) -> None:
+    pdf_path = Path(pdf_path)
+    output_tif_path = Path(output_tif_path)
 
     if (
         len(x_dict) < MIN_CONTROL_POINTS_PER_AXIS
@@ -331,7 +393,7 @@ def create_georeferenced_tiff(
 
     scale = dpi / 72.0
 
-    temp_output_tif_path = f"{output_tif_path}.tmp"
+    temp_output_tif_path = Path(f"{output_tif_path}.tmp")
 
     try:
 
@@ -407,8 +469,10 @@ def create_georeferenced_tiff(
             transform=transform,
         )
 
-        if os.path.exists(temp_output_tif_path):
-            os.remove(temp_output_tif_path)
+        output_tif_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if temp_output_tif_path.exists():
+            temp_output_tif_path.unlink()
 
         with rasterio.open(temp_output_tif_path, "w", **profile) as dst:
             dst.write(data)
@@ -419,8 +483,8 @@ def create_georeferenced_tiff(
 
     except Exception:
 
-        if os.path.exists(temp_output_tif_path):
-            os.remove(temp_output_tif_path)
+        if temp_output_tif_path.exists():
+            temp_output_tif_path.unlink()
 
         raise
 
@@ -446,12 +510,12 @@ def get_geotiff_center_lon_lat(tif_path: str) -> tuple[float, float]:
         return float(lon), float(lat)
 
 def ensure_geotiff_exists(airport_name: str) -> str:
+    airport_name = normalize_airport_code(airport_name)
+    airport_dir, pdf_path, geotiff_path = get_airport_storage_paths(airport_name)
+    airport_dir.mkdir(parents=True, exist_ok=True)
+    migrate_old_airport_storage(airport_name, pdf_path, geotiff_path)
 
-    pdf_path = f"{airport_name}.pdf"
-
-    geotiff_path = f"{airport_name}_affine.tif"
-
-    if os.path.exists(geotiff_path):
+    if geotiff_path.exists():
 
         print(f"{geotiff_path} already exists")
 
@@ -462,7 +526,7 @@ def ensure_geotiff_exists(airport_name: str) -> str:
             print(f"{geotiff_path} is invalid and will be regenerated: {exc}")
 
             try:
-                os.remove(geotiff_path)
+                geotiff_path.unlink()
 
             except OSError as remove_exc:
                 raise GeoTiffValidationError(
@@ -471,7 +535,7 @@ def ensure_geotiff_exists(airport_name: str) -> str:
                 ) from remove_exc
 
         else:
-            return geotiff_path
+            return str(geotiff_path)
 
     download_airport_diagram(
         airport_name,
@@ -498,7 +562,7 @@ def ensure_geotiff_exists(airport_name: str) -> str:
         north_up_flag,
     )
 
-    return geotiff_path
+    return str(geotiff_path)
 
 def main() -> None:
     geotiff_path = ensure_geotiff_exists(

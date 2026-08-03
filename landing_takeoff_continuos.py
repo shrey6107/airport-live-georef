@@ -7,7 +7,7 @@ from georeferencing import ensure_geotiff_exists, get_geotiff_center_lon_lat
 
 aircrafts = defaultdict(lambda: deque(maxlen=10))
 
-AIRPORT_NAME = "KSJC"
+AIRPORT_NAME = "KOSH"
 geotiff_path = ensure_geotiff_exists(AIRPORT_NAME)
 lon, lat = get_geotiff_center_lon_lat(geotiff_path)
 

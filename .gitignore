@@ -198,9 +198,22 @@ cython_debug/
 # Visual Studio Code
 #   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
 #   that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
+
 #   and can be added to the global gitignore or merged into this file. However, if you prefer, 
 #   you could uncomment the following to ignore the entire vscode folder
 # .vscode/
+
+# Generated airport diagram source/cache files
+web_app/airport_stuff/*/*.pdf
+web_app/airport_stuff/*/*.tif
+web_app/airport_stuff/*/*.tif.metadata.json
+web_app/airport_stuff/pdfs/*.pdf
+web_app/airport_stuff/geotiffs/*.tif
+web_app/airport_stuff/geotiffs/*.tif.metadata.json
+web_app/airport_stuff/*/approaches/*.pdf
+web_app/airport_stuff/*/approaches/*.tif
+web_app/static/charts/*/*/diagram.png
+web_app/static/charts/*/*/corners.json
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 

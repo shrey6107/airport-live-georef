@@ -33,11 +33,11 @@ import requests
 # extracts all runway headings for the selected airport.
 
 from runway_detection import get_airport_runway_headings
-from georeferencing import ensure_geotiff_exists, get_geotiff_center_lon_lat
+from georeferencing_with_glyph_fallback import ensure_geotiff_exists, get_geotiff_center_lon_lat
 
 
-AIRPORT_NAME = "KSFO"
-DIST_NM = 2
+AIRPORT_NAME = "KOSH"
+DIST_NM = 3
 TAKEOFF_SPEED = 80
 DB_NAME = AIRPORT_NAME
 
@@ -45,7 +45,7 @@ geotiff_path = ensure_geotiff_exists(AIRPORT_NAME)
 lon, lat = get_geotiff_center_lon_lat(geotiff_path)
 possible_headings = get_airport_runway_headings(AIRPORT_NAME)
 
-url = f"https://api.adsb.lol/v2/lat/{lat}/lon/{lon}/dist/{DIST_NM}"
+url = f"https://api.airplanes.live/v2/point/{lat}/{lon}/{DIST_NM}"
 HTTPS = requests.Session()
 
 landing_votes = defaultdict(lambda: deque(maxlen=10))
@@ -358,4 +358,4 @@ while True:
                 event_type="takeoff"
             )
 
-    time.sleep(3)
+    time.sleep(7)

@@ -2,8 +2,7 @@
 Nearest-airport lookup for map clicks.
 
 This module reads the local US airports TSV once and returns the nearest
-supported airport code. It does not georeference anything; the frontend still
-passes the returned code into the existing /airport/load pipeline.
+supported airport code. The frontend then uses the normal chart-discovery flow.
 """
 
 import csv
@@ -15,6 +14,7 @@ from typing import Any
 
 AIRPORTS_TSV_PATH = Path(__file__).with_name("airports.txt")
 EARTH_RADIUS_NM = 3440.065
+MAX_CLICK_DISTANCE_NM = 2
 
 
 def haversine_nm(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -82,7 +82,7 @@ def load_airports() -> tuple[dict[str, Any], ...]:
 def find_nearest_airport(
     lat: float,
     lon: float,
-    max_distance_nm: float = 2,
+    max_distance_nm: float = MAX_CLICK_DISTANCE_NM,
 ) -> dict[str, Any] | None:
     """Find the nearest cached airport within max_distance_nm."""
     nearest_airport = None
@@ -105,3 +105,14 @@ def find_nearest_airport(
         **nearest_airport,
         "distance_nm": round(nearest_distance, 1),
     }
+
+
+def find_airport_by_code(icao: str) -> dict[str, Any] | None:
+    """Return one cached airport record by its normalized identifier."""
+    normalized_icao = icao.upper().strip()
+
+    for airport in load_airports():
+        if airport["icao"] == normalized_icao:
+            return dict(airport)
+
+    return None
